@@ -41,11 +41,19 @@ class DBService {
   }
 
   static Future<bool> toggleFavorite(int userId, int songId) async {
-    final res = await http.post(
-      Uri.parse("$baseUrl/data.php?type=toggle_favorite"),
-      body: {"user_id": userId.toString(), "song_id": songId.toString()},
-    );
-    return jsonDecode(res.body)['success'] == true;
+    try {
+      final res = await http.post(
+        Uri.parse("$baseUrl/data.php?type=toggle_favorite"),
+        body: {"user_id": userId.toString(), "song_id": songId.toString()},
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      print("Favorite toggle error: $e");
+    }
+    return false;
   }
 
   static Future<List<dynamic>> getPlaylists(int userId) async {

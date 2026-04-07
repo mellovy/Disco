@@ -33,7 +33,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    // Show only first 4 songs in grid
     final gridSongs = _allSongs.take(4).toList();
 
     return Scaffold(
@@ -43,36 +42,28 @@ class _HomePageState extends State<HomePage> {
         : RefreshIndicator(
             onRefresh: _loadData,
             child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.all(20),
               children: [
-                const SizedBox(height: 50),
-                Text('Hello, ${widget.username}!', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-                const Text('Find your vibe today', style: TextStyle(color: Colors.grey)),
-                
+                const SizedBox(height: 40),
+                Text('Welcome, ${widget.username}!', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 30),
-                const Text('Recommended for You', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Text('Top Tracks', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 15),
 
                 if (_allSongs.isEmpty)
-                  Center(
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 40),
-                        Icon(Icons.music_off, size: 70, color: Colors.purple.withOpacity(0.2)),
-                        const Text("No songs available.", style: TextStyle(color: Colors.grey)),
-                      ],
-                    ),
+                  Column(
+                    children: [
+                      const SizedBox(height: 50),
+                      Icon(Icons.music_off, size: 70, color: Colors.purple.withOpacity(0.2)),
+                      const Text("Your database is empty.", style: TextStyle(color: Colors.grey)),
+                    ],
                   )
                 else
-                  // 2x2 Grid Layout
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 15,
-                      mainAxisSpacing: 15,
-                      childAspectRatio: 0.8,
+                      crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 0.85,
                     ),
                     itemCount: gridSongs.length,
                     itemBuilder: (context, index) {
@@ -80,32 +71,23 @@ class _HomePageState extends State<HomePage> {
                       return GestureDetector(
                         onTap: () => widget.onOpenPlayer(song),
                         child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(15),
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5)],
-                          ),
+                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(
                                 child: ClipRRect(
-                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-                                  child: Image.network(
-                                    song.imageUrl!, 
-                                    width: double.infinity, 
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (c,e,s) => Container(color: Colors.purple[50], child: const Icon(Icons.music_note)),
-                                  ),
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                                  child: Image.network(song.imageUrl!, width: double.infinity, fit: BoxFit.cover),
                                 ),
                               ),
                               Padding(
-                                padding: const EdgeInsets.all(10.0),
+                                padding: const EdgeInsets.all(8.0),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                    Text(song.artist ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                                    Text(song.title, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1),
+                                    Text(song.artist ?? '', style: const TextStyle(color: Colors.grey, fontSize: 11), maxLines: 1),
                                   ],
                                 ),
                               )
@@ -115,21 +97,21 @@ class _HomePageState extends State<HomePage> {
                       );
                     },
                   ),
-
-                const SizedBox(height: 15),
+                
+                const SizedBox(height: 30),
                 if (_allSongs.length > 4) ...[
-                  const Text('More Tracks', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
+                  const Text('More for You', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   ..._allSongs.skip(4).map((song) => ListTile(
                     leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(song.imageUrl!, width: 50, height: 50, fit: BoxFit.cover),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Image.network(song.imageUrl!, width: 45, height: 45, fit: BoxFit.cover),
                     ),
                     title: Text(song.title, style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(song.artist ?? ''),
                     onTap: () => widget.onOpenPlayer(song),
                   )),
                 ],
+                const SizedBox(height: 100), // Buffer for miniplayer
               ],
             ),
           ),

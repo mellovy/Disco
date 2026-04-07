@@ -24,6 +24,8 @@ class MusicPlayerPage extends StatefulWidget {
 class _MusicPlayerPageState extends State<MusicPlayerPage> {
   bool _isShuffle = false;
   late bool _isFavorite;
+  double? _dragValue; // Used to track manual seeking
+  bool _isDragging = false; // Prevents stream from overriding slider during drag
 
   @override
   void initState() {
@@ -31,7 +33,6 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
     _isFavorite = widget.song.isFavorite;
   }
 
-  // FIX: Removed Future from setState callback
   void _toggleFavorite() async {
     bool success = await DBService.toggleFavorite(widget.userId, widget.song.id);
     if (success) {
@@ -68,49 +69,65 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
           )
         ],
       ),
+      // SingleChildScrollView fixes the "Bottom Overflow" error
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 30.0),
           child: Column(
             children: [
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
               // Album Art
-              Container(
-                width: MediaQuery.of(context).size.width * 0.8,
-                height: MediaQuery.of(context).size.width * 0.8,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: [BoxShadow(color: Colors.purple.withOpacity(0.3), blurRadius: 25, spreadRadius: 2)],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(30),
-                  child: Image.network(
-                    widget.song.imageUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (c, e, s) => Container(color: Colors.grey[300], child: const Icon(Icons.music_note, size: 100)),
+              Center(
+                child: Container(
+                  width: MediaQuery.of(context).size.width * 0.75,
+                  height: MediaQuery.of(context).size.width * 0.75,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [BoxShadow(color: Colors.purple.withOpacity(0.2), blurRadius: 20, spreadRadius: 2)],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(30),
+                    child: Image.network(
+                      widget.song.imageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (c, e, s) => Container(color: Colors.grey[300], child: const Icon(Icons.music_note, size: 100)),
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 40),
-              Text(widget.song.title, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-              Text(widget.song.artist ?? '', style: const TextStyle(fontSize: 18, color: Colors.purple, fontWeight: FontWeight.w500)),
-              const SizedBox(height: 40),
+              const SizedBox(height: 30),
+              Text(widget.song.title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              Text(widget.song.artist ?? '', style: const TextStyle(fontSize: 18, color: Colors.purple)),
+              const SizedBox(height: 30),
 
-              // Progress Timeline
+              // Progress Timeline Logic Fix
               StreamBuilder<Duration>(
                 stream: widget.player.positionStream,
                 builder: (context, snapshot) {
                   final position = snapshot.data ?? Duration.zero;
                   final total = widget.player.duration ?? Duration.zero;
+                  
                   return Column(
                     children: [
                       Slider(
                         activeColor: Colors.purple,
                         inactiveColor: Colors.purple[100],
-                        value: position.inMilliseconds.toDouble().clamp(0.0, total.inMilliseconds.toDouble()),
+                        // Use _dragValue if user is dragging, otherwise use player position
+                        value: _isDragging 
+                            ? _dragValue! 
+                            : position.inMilliseconds.toDouble().clamp(0.0, total.inMilliseconds.toDouble()),
                         max: total.inMilliseconds.toDouble() > 0 ? total.inMilliseconds.toDouble() : 1.0,
                         onChanged: (v) {
+                          setState(() {
+                            _isDragging = true;
+                            _dragValue = v;
+                          });
+                        },
+                        onChangeEnd: (v) {
                           widget.player.seek(Duration(milliseconds: v.toInt()));
+                          setState(() {
+                            _isDragging = false;
+                          });
                         },
                       ),
                       Padding(
@@ -118,8 +135,8 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(_formatDuration(position), style: const TextStyle(fontSize: 12)),
-                            Text(_formatDuration(total), style: const TextStyle(fontSize: 12)),
+                            Text(_formatDuration(position)),
+                            Text(_formatDuration(total)),
                           ],
                         ),
                       ),
@@ -128,9 +145,9 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
                 },
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
 
-              // Player Controls
+              // Controls
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
@@ -138,43 +155,48 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
                     icon: Icon(Icons.shuffle, color: _isShuffle ? Colors.purple : Colors.grey),
                     onPressed: () => setState(() => _isShuffle = !_isShuffle),
                   ),
-                  IconButton(icon: const Icon(Icons.skip_previous, size: 45), onPressed: () {}),
+                  IconButton(icon: const Icon(Icons.skip_previous, size: 40), onPressed: () {}),
                   StreamBuilder<PlayerState>(
                     stream: widget.player.playerStateStream,
                     builder: (context, snapshot) {
                       final playing = snapshot.data?.playing ?? false;
                       return IconButton(
-                        icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 85, color: Colors.purple),
+                        icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 75, color: Colors.purple),
                         onPressed: () => playing ? widget.player.pause() : widget.player.play(),
                       );
                     },
                   ),
-                  IconButton(icon: const Icon(Icons.skip_next, size: 45), onPressed: () {}),
+                  IconButton(icon: const Icon(Icons.skip_next, size: 40), onPressed: () {}),
                   IconButton(icon: const Icon(Icons.repeat, color: Colors.grey), onPressed: () {}),
                 ],
               ),
 
-              const SizedBox(height: 30),
+              const SizedBox(height: 20),
 
-              // Volume Slider
+              // Volume Slider Fix
               Row(
                 children: [
-                  const Icon(Icons.volume_mute, color: Colors.purple, size: 20),
+                  const Icon(Icons.volume_down, color: Colors.purple),
                   Expanded(
-                    child: Slider(
-                      value: widget.player.volume,
-                      activeColor: Colors.purple[300],
-                      onChanged: (v) {
-                        setState(() {
-                          widget.player.setVolume(v);
-                        });
-                      },
+                    child: StreamBuilder<double>(
+                      stream: Stream.periodic(const Duration(milliseconds: 200), (_) => widget.player.volume),
+                      builder: (context, snapshot) {
+                        return Slider(
+                          value: widget.player.volume,
+                          activeColor: Colors.purple,
+                          onChanged: (v) {
+                            setState(() {
+                              widget.player.setVolume(v);
+                            });
+                          },
+                        );
+                      }
                     ),
                   ),
-                  const Icon(Icons.volume_up, color: Colors.purple, size: 20),
+                  const Icon(Icons.volume_up, color: Colors.purple),
                 ],
               ),
-              const SizedBox(height: 50),
+              const SizedBox(height: 40),
             ],
           ),
         ),
