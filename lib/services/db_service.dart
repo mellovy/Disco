@@ -4,12 +4,20 @@ import 'package:http/http.dart' as http;
 import '../models/song.dart';
 
 class DBService {
-  static const String baseUrl = "https://disco.dcism.org/api"; 
+  static const String baseUrl = "https://disco.dcism.org/api";
 
-  static Future<Map<String, dynamic>> authenticate(String user, String pass, {String? email}) async {
+  static Future<Map<String, dynamic>> authenticate(
+    String user,
+    String pass, {
+    String? email,
+  }) async {
     final response = await http.post(
       Uri.parse("$baseUrl/auth.php"),
-      body: {"username": user, "password": pass, if (email != null) "email": email},
+      body: {
+        "username": user,
+        "password": pass,
+        if (email != null) "email": email,
+      },
     );
     return jsonDecode(response.body);
   }
@@ -17,9 +25,11 @@ class DBService {
   static Future<List<Song>> fetchAllSongs(int userId) async {
     try {
       final response = await http.get(
-        Uri.parse("$baseUrl/data.php?type=songs&user_id=$userId&t=${DateTime.now().millisecondsSinceEpoch}")
+        Uri.parse(
+          "$baseUrl/data.php?type=songs&user_id=$userId&t=${DateTime.now().millisecondsSinceEpoch}",
+        ),
       );
-      
+
       if (response.statusCode == 200 && response.body.isNotEmpty) {
         List data = jsonDecode(response.body);
         return data.map((s) {
@@ -57,7 +67,9 @@ class DBService {
   }
 
   static Future<List<dynamic>> getPlaylists(int userId) async {
-    final res = await http.get(Uri.parse("$baseUrl/data.php?type=playlists&user_id=$userId"));
+    final res = await http.get(
+      Uri.parse("$baseUrl/data.php?type=playlists&user_id=$userId"),
+    );
     return res.statusCode == 200 ? jsonDecode(res.body) : [];
   }
 
@@ -70,11 +82,18 @@ class DBService {
     required String imageName,
   }) async {
     try {
-      var request = http.MultipartRequest('POST', Uri.parse("$baseUrl/upload_song.php"));
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse("$baseUrl/upload_song.php"),
+      );
       request.fields['title'] = title;
       request.fields['artist_id'] = artistId;
-      request.files.add(http.MultipartFile.fromBytes('audio', audioBytes, filename: audioName));
-      request.files.add(http.MultipartFile.fromBytes('image', imageBytes, filename: imageName));
+      request.files.add(
+        http.MultipartFile.fromBytes('audio', audioBytes, filename: audioName),
+      );
+      request.files.add(
+        http.MultipartFile.fromBytes('image', imageBytes, filename: imageName),
+      );
       var streamedResponse = await request.send();
       var response = await http.Response.fromStream(streamedResponse);
       return jsonDecode(response.body)['success'] == true;

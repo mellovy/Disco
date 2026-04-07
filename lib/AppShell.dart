@@ -22,6 +22,7 @@ class _AppShellState extends State<AppShell> {
   bool _playerMaximized = false;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  // Centralized player logic: only reloads if a NEW song is selected
   void _openPlayer(Song song) async {
     if (_currentSong?.id != song.id) {
       setState(() {
@@ -55,12 +56,16 @@ class _AppShellState extends State<AppShell> {
     ];
 
     return Scaffold(
+      // Using Stack to place the Mini Player on top of the content
       body: Stack(
         children: [
+          // Main App Content
           IndexedStack(index: _selectedIndex, children: pages),
           
+          // Player Overlay
           if (_currentSong != null) ...[
             if (_playerMaximized)
+              // Full Screen Player
               MusicPlayerPage(
                 song: _currentSong!, 
                 userId: widget.userId,
@@ -68,8 +73,9 @@ class _AppShellState extends State<AppShell> {
                 onClose: () => setState(() => _playerMaximized = false)
               )
             else
+              // Floating Mini Player (positioned above BottomNav)
               Positioned(
-                bottom: 5,
+                bottom: 10,
                 left: 10,
                 right: 10,
                 child: _buildMiniPlayer(),
@@ -81,10 +87,12 @@ class _AppShellState extends State<AppShell> {
         currentIndex: _selectedIndex,
         type: BottomNavigationBarType.fixed,
         selectedItemColor: Colors.purple,
-        backgroundColor: const Color(0xFFF1E6FF),
+        unselectedItemColor: Colors.grey,
+        backgroundColor: const Color(0xFFF1E6FF), // Consistent light purple theme
         onTap: (i) {
           setState(() {
             _selectedIndex = i;
+            // Minimize player if user navigates to a new tab
             _playerMaximized = false;
           });
         },
@@ -92,7 +100,7 @@ class _AppShellState extends State<AppShell> {
           BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
           BottomNavigationBarItem(icon: Icon(Icons.library_music), label: 'Library'),
-          BottomNavigationBarItem(icon: Icon(Icons.cloud_upload_outlined), label: 'Upload'),
+          BottomNavigationBarItem(icon: Icon(Icons.upload), label: 'Upload'),
         ],
       ),
     );
@@ -102,7 +110,7 @@ class _AppShellState extends State<AppShell> {
     return GestureDetector(
       onTap: () => setState(() => _playerMaximized = true),
       child: Material(
-        elevation: 10,
+        elevation: 12,
         borderRadius: BorderRadius.circular(15),
         color: Colors.white,
         child: Container(
@@ -110,38 +118,65 @@ class _AppShellState extends State<AppShell> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
+              // Album Art
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: Image.network(
                   _currentSong!.imageUrl!, 
-                  width: 50, height: 50, 
+                  width: 50, 
+                  height: 50, 
                   fit: BoxFit.cover,
-                  errorBuilder: (c,e,s) => const Icon(Icons.music_note),
+                  errorBuilder: (c, e, s) => Container(
+                    color: Colors.purple[50],
+                    child: const Icon(Icons.music_note, color: Colors.purple),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
+              // Song Info
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_currentSong!.title, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    Text(_currentSong!.artist ?? '', style: const TextStyle(fontSize: 12, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      _currentSong!.title, 
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14), 
+                      maxLines: 1, 
+                      overflow: TextOverflow.ellipsis
+                    ),
+                    Text(
+                      _currentSong!.artist ?? '', 
+                      style: const TextStyle(fontSize: 12, color: Colors.grey), 
+                      maxLines: 1, 
+                      overflow: TextOverflow.ellipsis
+                    ),
                   ],
                 ),
+              ),
+              // Controls
+              IconButton(
+                icon: const Icon(Icons.skip_previous), 
+                onPressed: () { /* Logic for previous */ }
               ),
               StreamBuilder<PlayerState>(
                 stream: _audioPlayer.playerStateStream,
                 builder: (context, snapshot) {
                   final playing = snapshot.data?.playing ?? false;
                   return IconButton(
-                    icon: Icon(playing ? Icons.pause : Icons.play_arrow, size: 30),
+                    icon: Icon(playing ? Icons.pause_circle_filled : Icons.play_circle_filled, size: 35),
+                    color: Colors.purple,
                     onPressed: () => playing ? _audioPlayer.pause() : _audioPlayer.play(),
                   );
                 },
               ),
               IconButton(
-                icon: const Icon(Icons.close),
+                icon: const Icon(Icons.skip_next), 
+                onPressed: () { /* Logic for next */ }
+              ),
+              // Close Player
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
                 onPressed: () {
                   _audioPlayer.stop();
                   setState(() => _currentSong = null);

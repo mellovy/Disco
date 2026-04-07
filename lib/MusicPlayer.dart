@@ -24,8 +24,8 @@ class MusicPlayerPage extends StatefulWidget {
 class _MusicPlayerPageState extends State<MusicPlayerPage> {
   bool _isShuffle = false;
   late bool _isFavorite;
-  double? _dragValue; // Used to track manual seeking
-  bool _isDragging = false; // Prevents stream from overriding slider during drag
+  double? _dragValue; 
+  bool _isDragging = false; 
 
   @override
   void initState() {
@@ -33,13 +33,23 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
     _isFavorite = widget.song.isFavorite;
   }
 
+  // FIX: Direct state update to ensure the heart icon changes immediately
   void _toggleFavorite() async {
+    setState(() {
+      _isFavorite = !_isFavorite;
+      widget.song.isFavorite = _isFavorite;
+    });
+
     bool success = await DBService.toggleFavorite(widget.userId, widget.song.id);
-    if (success) {
+    if (!success) {
+      // Revert if the database update failed
       setState(() {
         _isFavorite = !_isFavorite;
         widget.song.isFavorite = _isFavorite;
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Failed to update favorites"))
+      );
     }
   }
 
@@ -69,14 +79,12 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
           )
         ],
       ),
-      // SingleChildScrollView fixes the "Bottom Overflow" error
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 30.0),
           child: Column(
             children: [
               const SizedBox(height: 10),
-              // Album Art
               Center(
                 child: Container(
                   width: MediaQuery.of(context).size.width * 0.75,
@@ -100,7 +108,7 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
               Text(widget.song.artist ?? '', style: const TextStyle(fontSize: 18, color: Colors.purple)),
               const SizedBox(height: 30),
 
-              // Progress Timeline Logic Fix
+              // FIX: This Logic prevents the "Reset to Beginning" bug
               StreamBuilder<Duration>(
                 stream: widget.player.positionStream,
                 builder: (context, snapshot) {
@@ -112,9 +120,9 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
                       Slider(
                         activeColor: Colors.purple,
                         inactiveColor: Colors.purple[100],
-                        // Use _dragValue if user is dragging, otherwise use player position
+                        // While dragging, use the drag value. Otherwise, use stream position.
                         value: _isDragging 
-                            ? _dragValue! 
+                            ? _dragValue!.clamp(0.0, total.inMilliseconds.toDouble())
                             : position.inMilliseconds.toDouble().clamp(0.0, total.inMilliseconds.toDouble()),
                         max: total.inMilliseconds.toDouble() > 0 ? total.inMilliseconds.toDouble() : 1.0,
                         onChanged: (v) {
@@ -123,8 +131,8 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
                             _dragValue = v;
                           });
                         },
-                        onChangeEnd: (v) {
-                          widget.player.seek(Duration(milliseconds: v.toInt()));
+                        onChangeEnd: (v) async {
+                          await widget.player.seek(Duration(milliseconds: v.toInt()));
                           setState(() {
                             _isDragging = false;
                           });
@@ -146,15 +154,10 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
               ),
 
               const SizedBox(height: 10),
-
-              // Controls
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  IconButton(
-                    icon: Icon(Icons.shuffle, color: _isShuffle ? Colors.purple : Colors.grey),
-                    onPressed: () => setState(() => _isShuffle = !_isShuffle),
-                  ),
+                  IconButton(icon: Icon(Icons.shuffle, color: _isShuffle ? Colors.purple : Colors.grey), onPressed: () => setState(() => _isShuffle = !_isShuffle)),
                   IconButton(icon: const Icon(Icons.skip_previous, size: 40), onPressed: () {}),
                   StreamBuilder<PlayerState>(
                     stream: widget.player.playerStateStream,
@@ -170,27 +173,15 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
                   IconButton(icon: const Icon(Icons.repeat, color: Colors.grey), onPressed: () {}),
                 ],
               ),
-
               const SizedBox(height: 20),
-
-              // Volume Slider Fix
               Row(
                 children: [
                   const Icon(Icons.volume_down, color: Colors.purple),
                   Expanded(
-                    child: StreamBuilder<double>(
-                      stream: Stream.periodic(const Duration(milliseconds: 200), (_) => widget.player.volume),
-                      builder: (context, snapshot) {
-                        return Slider(
-                          value: widget.player.volume,
-                          activeColor: Colors.purple,
-                          onChanged: (v) {
-                            setState(() {
-                              widget.player.setVolume(v);
-                            });
-                          },
-                        );
-                      }
+                    child: Slider(
+                      value: widget.player.volume,
+                      activeColor: Colors.purple,
+                      onChanged: (v) => setState(() => widget.player.setVolume(v)),
                     ),
                   ),
                   const Icon(Icons.volume_up, color: Colors.purple),
