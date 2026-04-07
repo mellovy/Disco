@@ -5,6 +5,7 @@ import 'services/db_service.dart';
 class SearchPage extends StatefulWidget {
   final Function(Song) onOpenPlayer;
   const SearchPage({super.key, required this.onOpenPlayer});
+
   @override
   State<SearchPage> createState() => _SearchPageState();
 }
@@ -12,6 +13,7 @@ class SearchPage extends StatefulWidget {
 class _SearchPageState extends State<SearchPage> {
   List<Song> _allSongs = [];
   List<Song> _filteredSongs = [];
+  bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -20,17 +22,31 @@ class _SearchPageState extends State<SearchPage> {
     _fetchSongs();
   }
 
-  _fetchSongs() async {
+  Future<void> _fetchSongs() async {
     final songs = await DBService.fetchAllSongs();
-    setState(() { _allSongs = songs; _filteredSongs = songs; });
+    if (mounted) {
+      setState(() {
+        _allSongs = songs;
+        _filteredSongs = songs;
+        _isLoading = false;
+      });
+    }
   }
 
-  void _filterSongs(String query) {
-    setState(() {
-      _filteredSongs = _allSongs
-          .where((s) => s.title.toLowerCase().contains(query.toLowerCase()) || 
-                        (s.artist?.toLowerCase().contains(query.toLowerCase()) ?? false))
+  void _runFilter(String enteredKeyword) {
+    List<Song> results = [];
+    if (enteredKeyword.isEmpty) {
+      results = _allSongs;
+    } else {
+      results = _allSongs
+          .where((song) =>
+              song.title.toLowerCase().contains(enteredKeyword.toLowerCase()) ||
+              (song.artist?.toLowerCase().contains(enteredKeyword.toLowerCase()) ?? false))
           .toList();
+    }
+
+    setState(() {
+      _filteredSongs = results;
     });
   }
 
@@ -43,30 +59,45 @@ class _SearchPageState extends State<SearchPage> {
           children: [
             Padding(
               padding: const EdgeInsets.all(16.0),
-              child: TextField(
-                controller: _searchController,
-                onChanged: _filterSongs,
-                decoration: InputDecoration(
-                  prefixIcon: IconButton(
-                    icon: const Icon(Icons.arrow_back),
-                    onPressed: () => _searchController.clear(), // Simplified back action
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new, size: 20),
+                    onPressed: () => Navigator.of(context).maybePop(),
                   ),
-                  hintText: "Search songs or artists...",
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
-                ),
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      onChanged: (value) => _runFilter(value),
+                      decoration: InputDecoration(
+                        hintText: "Search artist, songs...",
+                        prefixIcon: const Icon(Icons.search),
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(30),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                itemCount: _filteredSongs.length,
-                itemBuilder: (context, i) => ListTile(
-                  title: Text(_filteredSongs[i].title),
-                  subtitle: Text(_filteredSongs[i].artist ?? ''),
-                  onTap: () => widget.onOpenPlayer(_filteredSongs[i]),
-                ),
-              ),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _filteredSongs.isEmpty
+                      ? const Center(child: Text("No songs match your search."))
+                      : ListView.builder(
+                          itemCount: _filteredSongs.length,
+                          itemBuilder: (context, index) => ListTile(
+                            leading: const Icon(Icons.music_note),
+                            title: Text(_filteredSongs[index].title),
+                            subtitle: Text(_filteredSongs[index].artist ?? ''),
+                            onTap: () => widget.onOpenPlayer(_filteredSongs[index]),
+                          ),
+                        ),
             ),
           ],
         ),
