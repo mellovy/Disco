@@ -5,7 +5,6 @@ import '../models/song.dart';
 class DBService {
   static const String baseUrl = "https://disco.dcism.org/api/"; 
 
-  // Combined Login and Registration
   static Future<Map<String, dynamic>> authenticate(String user, String pass, {String? email}) async {
     final response = await http.post(
       Uri.parse("$baseUrl/auth.php"),
@@ -20,12 +19,13 @@ class DBService {
 
   static Future<List<Song>> fetchAllSongs() async {
     final response = await http.get(Uri.parse("$baseUrl/data.php?type=songs"));
+    
     if (response.statusCode == 200) {
       List data = jsonDecode(response.body);
       return data.map((s) => Song(
         id: int.parse(s['song_id'].toString()),
         title: s['title'],
-        artist: s['artist_name'],
+        artist: s['artist_name'] ?? 'Unknown Artist',
         audioUrl: s['audio_url'],
         imageUrl: s['cover_image'],
       )).toList();
