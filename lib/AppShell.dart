@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'Homepage.dart';
 import 'Search.dart';
-import 'models/song.dart';
 import 'Library.dart';
+import 'models/song.dart';
 import 'MusicPlayer.dart';
 
 class AppShell extends StatefulWidget {
@@ -37,7 +37,7 @@ class _AppShellState extends State<AppShell> {
     final pages = <Widget>[
       HomePage(username: widget.username, userId: widget.userId, onOpenPlayer: _openPlayer),
       SearchPage(onOpenPlayer: _openPlayer),
-      const Center(child: Text('Library')),
+      LibraryPage(userId: widget.userId), // Integrated Library
     ];
 
     return Scaffold(
@@ -63,7 +63,7 @@ class _AppShellState extends State<AppShell> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-          BottomNavigationBarItem(icon: Icon(Icons.menu), label: 'Library'),
+          BottomNavigationBarItem(icon: Icon(Icons.library_music), label: 'Library'),
         ],
       ),
     );

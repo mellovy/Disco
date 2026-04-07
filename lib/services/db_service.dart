@@ -1,39 +1,43 @@
-import 'package:mysql1/mysql1.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../models/song.dart';
 
 class DBService {
-  static const String _host = 'dbadmin.dcism.org';
-  static const int _port = 3306;
-  static const String _user = 's24103884_mobdev';
-  static const String _pass = 'Disco1025';
-  static const String _db = 's24103884_mobdev';
+  static const String baseUrl = "https://disco.dcism.org/api/"; 
 
-  static Future<MySqlConnection> getConnection() async {
-    var settings = ConnectionSettings(
-      host: _host,
-      port: _port,
-      user: _user,
-      password: _pass,
-      db: _db,
+  // Combined Login and Registration
+  static Future<Map<String, dynamic>> authenticate(String user, String pass, {String? email}) async {
+    final response = await http.post(
+      Uri.parse("$baseUrl/auth.php"),
+      body: {
+        "username": user,
+        "password": pass,
+        if (email != null) "email": email,
+      },
     );
-    return await MySqlConnection.connect(settings);
+    return jsonDecode(response.body);
   }
 
   static Future<List<Song>> fetchAllSongs() async {
-    final conn = await getConnection();
-    // Joins songs and artists tables based on your SQL schema
-    var results = await conn.query(
-      'SELECT s.song_id, s.title, s.audio_url, s.cover_image, a.name as artist_name '
-      'FROM songs s LEFT JOIN artists a ON s.artist_id = a.artist_id'
-    );
-    await conn.close();
-    
-    return results.map((row) => Song(
-      id: row['song_id'],
-      title: row['title'],
-      artist: row['artist_name'],
-      audioUrl: row['audio_url'],
-      imageUrl: row['cover_image'],
-    )).toList();
+    final response = await http.get(Uri.parse("$baseUrl/data.php?type=songs"));
+    if (response.statusCode == 200) {
+      List data = jsonDecode(response.body);
+      return data.map((s) => Song(
+        id: int.parse(s['song_id'].toString()),
+        title: s['title'],
+        artist: s['artist_name'],
+        audioUrl: s['audio_url'],
+        imageUrl: s['cover_image'],
+      )).toList();
+    }
+    return [];
+  }
+
+  static Future<List<dynamic>> getPlaylists(int userId) async {
+    final res = await http.get(Uri.parse("$baseUrl/data.php?type=playlists&user_id=$userId"));
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body);
+    }
+    return [];
   }
 }

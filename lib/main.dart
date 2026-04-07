@@ -36,34 +36,29 @@ class _DiscoAppState extends State<DiscoApp> {
     });
   }
 
-  Future<void> _handleLogin() async {
+  Future<void> _handleAuth() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isConnecting = true);
 
     try {
-      final conn = await DBService.getConnection();
-      if (_isSignUp) {
-        await conn.query(
-          'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
-          [_usernameController.text, _emailController.text, _passwordController.text]
-        );
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Account Created! Please Login.')));
-        setState(() => _isSignUp = false);
-      } else {
-        var results = await conn.query(
-          'SELECT user_id FROM users WHERE username = ? AND password = ?',
-          [_usernameController.text, _passwordController.text]
-        );
-        if (results.isNotEmpty) {
-          int uId = results.first['user_id'];
-          Navigator.of(context).pushReplacement(MaterialPageRoute(
-            builder: (_) => AppShell(username: _usernameController.text, userId: uId)
-          ));
+      final res = await DBService.authenticate(
+        _usernameController.text, 
+        _passwordController.text,
+        email: _isSignUp ? _emailController.text : null,
+      );
+
+      if (res['success'] == true) {
+        if (_isSignUp) {
+          setState(() => _isSignUp = false);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Account Created! Please Login.')));
         } else {
-          throw 'Invalid username or password';
+          Navigator.of(context).pushReplacement(MaterialPageRoute(
+            builder: (_) => AppShell(username: _usernameController.text, userId: res['user_id'])
+          ));
         }
+      } else {
+        throw 'Authentication failed';
       }
-      await conn.close();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
     } finally {
@@ -111,7 +106,7 @@ class _DiscoAppState extends State<DiscoApp> {
                           width: double.infinity,
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(backgroundColor: Colors.black),
-                            onPressed: _handleLogin,
+                            onPressed: _handleAuth,
                             child: Text(_isSignUp ? 'Sign Up' : 'Login', style: const TextStyle(color: Colors.white)),
                           ),
                         ),
