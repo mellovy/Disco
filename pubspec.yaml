@@ -13,6 +13,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   just_audio: ^0.10.5
   http: ^1.1.0
+  file_picker: ^8.0.0
+  http_parser: ^4.0.2
 
 dev_dependencies:
   flutter_test:
@@ -23,4 +25,3 @@ flutter:
   uses-material-design: true
   assets:
     - images/
-    - assets/audio/love_story.mp3
