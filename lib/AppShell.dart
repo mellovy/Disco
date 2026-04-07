@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'Homepage.dart';
 import 'Search.dart';
 import 'models/song.dart';
+import 'Library.dart';
 import 'MusicPlayer.dart';
 
 class AppShell extends StatefulWidget {
@@ -34,9 +35,15 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
+<<<<<<< HEAD
       HomePage(username: widget.username, userId: widget.userId, onOpenPlayer: _openPlayer),
       SearchPage(onOpenPlayer: _openPlayer),
       const Center(child: Text('Library')),
+=======
+      HomePage(username: widget.username, onSearch: () => _onItemTapped(1), onOpenPlayer: (s) => _openPlayer(s, maximize: true)),
+      SearchPage(onOpenPlayer: (s) => _openPlayer(s, maximize: true)),
+      const LibraryContent(),
+>>>>>>> edd0662ae49277216f6401b616634cae25561648
     ];
 
     return Scaffold(
