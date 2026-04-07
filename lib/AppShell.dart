@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'Homepage.dart';
 import 'Search.dart';
 import 'models/song.dart';
+import 'Library.dart';
 import 'MusicPlayer.dart';
 
 class AppShell extends StatefulWidget {
@@ -49,7 +50,7 @@ class _AppShellState extends State<AppShell> {
     final pages = <Widget>[
       HomePage(username: widget.username, onSearch: () => _onItemTapped(1), onOpenPlayer: (s) => _openPlayer(s, maximize: true)),
       SearchPage(onOpenPlayer: (s) => _openPlayer(s, maximize: true)),
-      Center(child: Text('Library - coming soon', style: TextStyle(fontSize: 18, color: Colors.black54))),
+      const LibraryContent(),
     ];
 
     return Scaffold(
