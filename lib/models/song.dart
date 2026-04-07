@@ -1,18 +1,18 @@
 class Song {
-  final int? id;
+  final int id;
   final String title;
   final String? artist;
-  final String? imageUrl;
   final String? audioUrl;
-  final int? duration;
+  final String? imageUrl;
+  bool isFavorite;
 
   Song({
-    this.id,
+    required this.id,
     required this.title,
     this.artist,
-    this.imageUrl,
     this.audioUrl,
-    this.duration,
+    this.imageUrl,
+    this.isFavorite = false,
   });
 
   // Factory to create Song from Database/JSON map
@@ -23,7 +23,6 @@ class Song {
       artist: json['artist_name'], // Joined from artists table
       imageUrl: json['cover_image'],
       audioUrl: json['audio_url'],
-      duration: json['duration'],
     );
   }
 }

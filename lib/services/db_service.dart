@@ -14,22 +14,25 @@ class DBService {
     return jsonDecode(response.body);
   }
 
-  static Future<List<Song>> fetchAllSongs() async {
+  static Future<List<Song>> fetchAllSongs(int userId) async {
     try {
-      // FIX: Added 't' parameter with current time to prevent browser caching
       final response = await http.get(
-        Uri.parse("$baseUrl/data.php?type=songs&t=${DateTime.now().millisecondsSinceEpoch}")
+        Uri.parse("$baseUrl/data.php?type=songs&user_id=$userId&t=${DateTime.now().millisecondsSinceEpoch}")
       );
       
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 && response.body.isNotEmpty) {
         List data = jsonDecode(response.body);
-        return data.map((s) => Song(
-          id: int.parse(s['song_id'].toString()),
-          title: s['title'] ?? 'Untitled',
-          artist: s['artist_name'] ?? 'Unknown Artist',
-          audioUrl: s['audio_url'], 
-          imageUrl: s['cover_image'],
-        )).toList();
+        return data.map((s) {
+          int id = int.parse(s['song_id'].toString());
+          return Song(
+            id: id,
+            title: s['title'] ?? 'Untitled',
+            artist: s['artist_name'] ?? 'Unknown Artist',
+            audioUrl: "$baseUrl/get_file.php?id=$id&field=audio_url",
+            imageUrl: "$baseUrl/get_file.php?id=$id&field=cover_image",
+            isFavorite: s['is_favorite'] == 1,
+          );
+        }).toList();
       }
     } catch (e) {
       print("Fetch Error: $e");
@@ -37,12 +40,17 @@ class DBService {
     return [];
   }
 
+  static Future<bool> toggleFavorite(int userId, int songId) async {
+    final res = await http.post(
+      Uri.parse("$baseUrl/data.php?type=toggle_favorite"),
+      body: {"user_id": userId.toString(), "song_id": songId.toString()},
+    );
+    return jsonDecode(res.body)['success'] == true;
+  }
+
   static Future<List<dynamic>> getPlaylists(int userId) async {
     final res = await http.get(Uri.parse("$baseUrl/data.php?type=playlists&user_id=$userId"));
-    if (res.statusCode == 200) {
-      return jsonDecode(res.body);
-    }
-    return [];
+    return res.statusCode == 200 ? jsonDecode(res.body) : [];
   }
 
   static Future<bool> uploadSong({
@@ -55,20 +63,14 @@ class DBService {
   }) async {
     try {
       var request = http.MultipartRequest('POST', Uri.parse("$baseUrl/upload_song.php"));
-      
       request.fields['title'] = title;
       request.fields['artist_id'] = artistId;
-
       request.files.add(http.MultipartFile.fromBytes('audio', audioBytes, filename: audioName));
       request.files.add(http.MultipartFile.fromBytes('image', imageBytes, filename: imageName));
-
       var streamedResponse = await request.send();
       var response = await http.Response.fromStream(streamedResponse);
-      
-      final res = jsonDecode(response.body);
-      return res['success'] == true;
+      return jsonDecode(response.body)['success'] == true;
     } catch (e) {
-      print("Upload error: $e");
       return false;
     }
   }

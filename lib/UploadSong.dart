@@ -72,7 +72,7 @@ class _UploadSongPageState extends State<UploadSongPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF1E6FF),
-      appBar: AppBar(title: const Text("Cloud Music Upload"), backgroundColor: Colors.transparent, elevation: 0),
+      appBar: AppBar(title: const Text("Music Upload"), backgroundColor: Colors.transparent, elevation: 0),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
