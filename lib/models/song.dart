@@ -15,12 +15,11 @@ class Song {
     this.isFavorite = false,
   });
 
-  // Factory to create Song from Database/JSON map
   factory Song.fromJson(Map<String, dynamic> json) {
     return Song(
       id: json['song_id'],
       title: json['title'] ?? 'Unknown Title',
-      artist: json['artist_name'], // Joined from artists table
+      artist: json['artist_name'],
       imageUrl: json['cover_image'],
       audioUrl: json['audio_url'],
     );

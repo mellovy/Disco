@@ -88,11 +88,10 @@ class _AppShellState extends State<AppShell> {
         type: BottomNavigationBarType.fixed,
         selectedItemColor: Colors.purple,
         unselectedItemColor: Colors.grey,
-        backgroundColor: const Color(0xFFF1E6FF), // Consistent light purple theme
+        backgroundColor: const Color(0xFFF1E6FF),
         onTap: (i) {
           setState(() {
             _selectedIndex = i;
-            // Minimize player if user navigates to a new tab
             _playerMaximized = false;
           });
         },

@@ -11,7 +11,6 @@ class AudioManager {
   final AudioPlayer _player = AudioPlayer();
   Song? _currentSong;
 
-  // Expose a normalized position stream (0.0 - 1.0)
   Stream<double> get positionFractionStream async* {
     await for (final pos in _player.positionStream) {
       final dur = _player.duration;
@@ -52,6 +51,5 @@ class AudioManager {
     }
   }
 
-  // Keep the player alive for the app lifetime; do not dispose unless explicitly requested.
   Future<void> dispose() => _player.dispose();
 }
