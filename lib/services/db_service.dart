@@ -21,6 +21,33 @@ class DBService {
     );
     return jsonDecode(response.body);
   }
+  
+  static Future<bool> changePassword({
+  required int userId,
+  required String username,
+  required String currentPassword,
+  required String newPassword,
+}) async {
+  try {
+    final response = await http.post(
+      Uri.parse("$baseUrl/data.php?type=change_password"),
+      body: {
+        "user_id": userId.toString(),
+        "username": username,
+        "current_password": currentPassword,
+        "new_password": newPassword,
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['success'] == true;
+    }
+  } catch (e) {
+    print("Change password error: $e");
+  }
+  return false;
+}
 
   static Future<List<Song>> fetchAllSongs(int userId) async {
     try {
@@ -74,31 +101,31 @@ class DBService {
   }
 
   static Future<bool> uploadSong({
-    required String title,
-    required String artistId,
-    required Uint8List audioBytes,
-    required String audioName,
-    required Uint8List imageBytes,
-    required String imageName,
-  }) async {
-    try {
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse("$baseUrl/upload_song.php"),
-      );
-      request.fields['title'] = title;
-      request.fields['artist_id'] = artistId;
-      request.files.add(
-        http.MultipartFile.fromBytes('audio', audioBytes, filename: audioName),
-      );
-      request.files.add(
-        http.MultipartFile.fromBytes('image', imageBytes, filename: imageName),
-      );
-      var streamedResponse = await request.send();
-      var response = await http.Response.fromStream(streamedResponse);
-      return jsonDecode(response.body)['success'] == true;
-    } catch (e) {
-      return false;
-    }
+  required String title,
+  required String artistName,          // ← was: artistId
+  required Uint8List audioBytes,
+  required String audioName,
+  required Uint8List imageBytes,
+  required String imageName,
+}) async {
+  try {
+    var request = http.MultipartRequest(
+      'POST',
+      Uri.parse("$baseUrl/upload_song.php"),
+    );
+    request.fields['title'] = title;
+    request.fields['artist_name'] = artistName;  // ← was: artist_id / artistId
+    request.files.add(
+      http.MultipartFile.fromBytes('audio', audioBytes, filename: audioName),
+    );
+    request.files.add(
+      http.MultipartFile.fromBytes('image', imageBytes, filename: imageName),
+    );
+    var streamedResponse = await request.send();
+    var response = await http.Response.fromStream(streamedResponse);
+    return jsonDecode(response.body)['success'] == true;
+  } catch (e) {
+    return false;
   }
+}
 }

@@ -3,40 +3,67 @@ import 'services/db_service.dart';
 
 class LibraryPage extends StatelessWidget {
   final int userId;
-  const LibraryPage({Key? key, required this.userId}) : super(key: key);
+  const LibraryPage({super.key, required this.userId});
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = Theme.of(context).scaffoldBackgroundColor;
+    final textPrimary = isDark ? Colors.white : Colors.black87;
+    final cardColor = isDark ? const Color(0xFF2A2A3E) : Colors.white;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF1E6FF),
+      backgroundColor: bgColor,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Your Library', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
+              Text('Your Library',
+                  style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: textPrimary)),
               const SizedBox(height: 20),
               Expanded(
                 child: FutureBuilder<List<dynamic>>(
                   future: DBService.getPlaylists(userId),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
+                      return const Center(
+                          child: CircularProgressIndicator(
+                              color: Colors.purple));
                     }
                     if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return const Center(child: Text("No playlists found."));
+                      return Center(
+                          child: Text("No playlists found.",
+                              style: TextStyle(
+                                  color: isDark
+                                      ? Colors.grey[400]
+                                      : Colors.grey)));
                     }
                     final playlists = snapshot.data!;
                     return ListView.builder(
                       itemCount: playlists.length,
                       itemBuilder: (context, index) {
                         return Card(
+                          color: cardColor,
                           margin: const EdgeInsets.only(bottom: 12),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                           child: ListTile(
-                            leading: const Icon(Icons.playlist_play, size: 40),
-                            title: Text(playlists[index]['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: const Text("Playlist"),
+                            leading: const Icon(Icons.playlist_play,
+                                size: 40, color: Colors.purple),
+                            title: Text(playlists[index]['name'],
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: textPrimary)),
+                            subtitle: Text("Playlist",
+                                style: TextStyle(
+                                    color: isDark
+                                        ? Colors.grey[400]
+                                        : Colors.grey)),
                           ),
                         );
                       },
