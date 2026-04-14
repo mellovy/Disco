@@ -68,7 +68,8 @@ class _UploadSongPageState extends State<UploadSongPage> {
 
     setState(() => _isUploading = true);
 
-    final success = await DBService.uploadSong(
+    // Call returns an error message string or null if successful
+    final errorMessage = await DBService.uploadSong(
       title: title,
       artistName: artist,
       audioBytes: _audioBytes!,
@@ -81,13 +82,10 @@ class _UploadSongPageState extends State<UploadSongPage> {
 
     setState(() => _isUploading = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(success ? "Upload successful" : "Upload failed"),
-      ),
-    );
-
-    if (success) {
+    if (errorMessage == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Upload successful")),
+      );
       _titleController.clear();
       _artistNameController.clear();
       setState(() {
@@ -96,6 +94,11 @@ class _UploadSongPageState extends State<UploadSongPage> {
         _imageBytes = null;
         _imageName = null;
       });
+    } else {
+      // Display exact API error on failure
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Upload failed: $errorMessage")),
+      );
     }
   }
 

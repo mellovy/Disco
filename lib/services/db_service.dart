@@ -106,7 +106,7 @@ class DBService {
       final res = await http.get(Uri.parse("$baseUrl/preferences.php?user_id=$userId"));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        return data['dark_mode'] == 1; // Returns true if dark mode is enabled in the DB
+        return data['dark_mode'] == 1; 
       }
     } catch (e) {
       print("Pref error: $e");
@@ -120,7 +120,7 @@ class DBService {
         Uri.parse("$baseUrl/preferences.php"),
         body: {
           "user_id": userId.toString(),
-          "dark_mode": isDark ? "1" : "0", // Sends 1 for dark, 0 for light
+          "dark_mode": isDark ? "1" : "0", 
         }
       );
     } catch (e) {
@@ -128,7 +128,8 @@ class DBService {
     }
   }
 
-  static Future<bool> uploadSong({
+  // Changed to return a String error message instead of a boolean
+  static Future<String?> uploadSong({
     required String title,
     required String artistName,
     required Uint8List audioBytes,
@@ -155,18 +156,20 @@ class DBService {
       
       if (response.statusCode == 200) {
         try {
-          return jsonDecode(response.body)['success'] == true;
+          final decoded = jsonDecode(response.body);
+          if (decoded['success'] == true) {
+            return null; // Return null on success
+          } else {
+            return decoded['error'] ?? "Unknown server error"; 
+          }
         } catch(e) {
-          print("JSON Decode error on upload. Server returned: ${response.body}");
-          return false;
+          return "JSON Decode error: ${response.body}";
         }
       } else {
-        print("Upload failed with server status code: ${response.statusCode}");
-        return false;
+        return "Upload failed with status: ${response.statusCode}";
       }
     } catch (e) {
-      print("Upload exception: $e");
-      return false;
+      return "Upload exception: $e";
     }
   }
 }
