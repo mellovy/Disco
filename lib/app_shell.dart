@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,8 +13,8 @@ import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import 'main.dart' show themeModeNotifier;
 import 'services/db_service.dart';
+import 'services/audio_manager.dart';
 
-// ── Persistence helpers ────────────────────────────────────────────────────────
 class _Prefs {
   static Future<SharedPreferences> get _p => SharedPreferences.getInstance();
 
@@ -66,17 +67,23 @@ class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
   Song? _currentSong;
   bool _playerMaximized = false;
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  
+  late StreamSubscription<Song?> _songSub;
 
   @override
   void initState() {
     super.initState();
     _displayName = widget.username;
     _loadProfile();
+
+    _songSub = AudioManager.instance.currentSongStream.listen((song) {
+      if (mounted && _currentSong?.id != song?.id) {
+        setState(() => _currentSong = song);
+      }
+    });
   }
 
   Future<void> _loadProfile() async {
-    // Fetch Dark Mode from the database
     final isDark = await DBService.getDarkMode(widget.userId);
     themeModeNotifier.value = isDark ? ThemeMode.dark : ThemeMode.light;
 
@@ -106,29 +113,26 @@ class _AppShellState extends State<AppShell> {
   }
 
   // ── Player logic ──────────────────────────────────────────────────────────
-  void _openPlayer(Song song) async {
-    if (_currentSong?.id != song.id) {
-      setState(() => _currentSong = song);
-      try {
-        await _audioPlayer.setUrl(song.audioUrl!);
-        _audioPlayer.play();
-      } catch (e) {
-        debugPrint("Error loading audio: $e");
-      }
+  void _openPlayer(Song song) {
+    setState(() {
+      _currentSong = song;
+      _playerMaximized = true;
+    });
+
+    // Always set the song (which clears the queue and plays this one)
+    if (AudioManager.instance.currentPlayingId != song.id) {
+      AudioManager.instance.setSong(song);
     }
-    setState(() => _playerMaximized = true);
   }
 
   @override
   void dispose() {
-    _audioPlayer.dispose();
+    _songSub.cancel();
     super.dispose();
   }
 
-  // ── Logout ────────────────────────────────────────────────────────────────
   void _logout() {
-    _audioPlayer.stop();
-    // Return to light mode automatically when logging out
+    AudioManager.instance.pause(); 
     themeModeNotifier.value = ThemeMode.light;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (_) => false);
   }
@@ -158,7 +162,6 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  // ── Profile sheet ─────────────────────────────────────────────────────────
   void _showProfile() {
     showModalBottomSheet(
       context: context,
@@ -185,13 +188,12 @@ class _AppShellState extends State<AppShell> {
             _avatarColorIndex = colorIndex;
             _avatarImageBytes = imageBytes;
           });
-          _saveProfile(); // persist immediately
+          _saveProfile(); 
         },
       ),
     );
   }
 
-  // ── Settings sheet ────────────────────────────────────────────────────────
   void _showSettings() {
     showModalBottomSheet(
       context: context,
@@ -204,7 +206,6 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -234,7 +235,6 @@ class _AppShellState extends State<AppShell> {
         children: [
           IndexedStack(index: _selectedIndex, children: pages),
 
-          // Avatar button (hidden on Search tab since it has its own)
           if (_selectedIndex != 1)
             Positioned(
               top: MediaQuery.of(context).padding.top + 8,
@@ -260,13 +260,12 @@ class _AppShellState extends State<AppShell> {
               ),
             ),
 
-          // Player overlay
           if (_currentSong != null) ...[
             if (_playerMaximized)
               MusicPlayerPage(
                   song: _currentSong!,
                   userId: widget.userId,
-                  player: _audioPlayer,
+                  player: AudioManager.instance.player,
                   onClose: () => setState(() => _playerMaximized = false))
             else
               Positioned(
@@ -298,7 +297,6 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  // ── Mini Player ───────────────────────────────────────────────────────────
   Widget _buildMiniPlayer(bool isDark) {
     final textColor = isDark ? Colors.white : Colors.black87;
     return GestureDetector(
@@ -347,10 +345,16 @@ class _AppShellState extends State<AppShell> {
               ),
               IconButton(
                 icon: Icon(Icons.skip_previous, color: textColor),
-                onPressed: () {},
+                onPressed: () {
+                  if (AudioManager.instance.player.hasPrevious) {
+                    AudioManager.instance.player.seekToPrevious();
+                  } else {
+                    AudioManager.instance.player.seek(Duration.zero);
+                  }
+                },
               ),
               StreamBuilder<PlayerState>(
-                stream: _audioPlayer.playerStateStream,
+                stream: AudioManager.instance.player.playerStateStream, 
                 builder: (context, snapshot) {
                   final playing = snapshot.data?.playing ?? false;
                   return SizedBox(
@@ -365,20 +369,23 @@ class _AppShellState extends State<AppShell> {
                           size: 35,
                           color: Colors.purple),
                       onPressed: () =>
-                          playing ? _audioPlayer.pause() : _audioPlayer.play(),
+                          playing ? AudioManager.instance.pause() : AudioManager.instance.play(),
                     ),
                   );
                 },
               ),
               IconButton(
                 icon: Icon(Icons.skip_next, color: textColor),
-                onPressed: () {},
+                onPressed: () {
+                  if (AudioManager.instance.player.hasNext) {
+                    AudioManager.instance.player.seekToNext();
+                  }
+                },
               ),
               IconButton(
                 icon: Icon(Icons.close, size: 20, color: textColor),
                 onPressed: () {
-                  _audioPlayer.stop();
-                  setState(() => _currentSong = null);
+                  AudioManager.instance.stop();
                 },
               ),
             ],
@@ -390,7 +397,7 @@ class _AppShellState extends State<AppShell> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Profile bottom sheet
+// Profile & Settings sheets remain exactly the same below...
 // ═══════════════════════════════════════════════════════════════
 class _ProfileSheet extends StatefulWidget {
   final String username;
@@ -726,9 +733,6 @@ class _SheetTile extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Settings bottom sheet
-// ═══════════════════════════════════════════════════════════════
 class _SettingsSheet extends StatefulWidget {
   final int userId;
   final String username;
@@ -744,7 +748,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   bool _highQuality = true;
   double _crossfade = 0.0;
 
-  // ── Change Password dialog ────────────────────────────────────────────────
   void _showChangePassword() {
     final currentCtrl = TextEditingController();
     final newCtrl = TextEditingController();
@@ -908,7 +911,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Handle bar
             Center(
               child: Container(
                 width: 40,
@@ -926,7 +928,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                     color: textPrimary)),
             const SizedBox(height: 20),
 
-            // ── Appearance ─────────────────────────────────────────
             _SectionHeader("Appearance", isDark: isDark),
             ValueListenableBuilder<ThemeMode>(
               valueListenable: themeModeNotifier,
@@ -952,15 +953,14 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                     onChanged: (v) {
                       themeModeNotifier.value =
                           v ? ThemeMode.dark : ThemeMode.light;
-                      DBService.saveDarkMode(widget.userId, v); // Save to database
-                      setState(() {}); // refresh sheet colors
+                      DBService.saveDarkMode(widget.userId, v); 
+                      setState(() {}); 
                     },
                   ),
                 );
               },
             ),
 
-            // ── Account ────────────────────────────────────────────
             _SectionHeader("Account", isDark: isDark),
             ListTile(
               leading: const Icon(Icons.lock_outline, color: Colors.purple),
@@ -972,7 +972,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
               onTap: _showChangePassword,
             ),
 
-            // ── Playback ──────────────────────────────────────────
             _SectionHeader("Playback", isDark: isDark),
             SwitchListTile(
               secondary:
@@ -1033,7 +1032,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
               ),
             ),
 
-            // ── Notifications ──────────────────────────────────────
             _SectionHeader("Notifications", isDark: isDark),
             SwitchListTile(
               secondary:
@@ -1047,7 +1045,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
               onChanged: (v) => setState(() => _notifications = v),
             ),
 
-            // ── About ──────────────────────────────────────────────
             _SectionHeader("About", isDark: isDark),
             ListTile(
               leading:

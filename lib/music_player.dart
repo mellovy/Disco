@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'models/song.dart';
 import 'services/db_service.dart';
+import 'services/audio_manager.dart';
 
 class MusicPlayerPage extends StatefulWidget {
   final Song song;
@@ -22,9 +24,9 @@ class MusicPlayerPage extends StatefulWidget {
 }
 
 class _MusicPlayerPageState extends State<MusicPlayerPage> {
-  bool _isShuffle = false;
-  bool _isRepeat = false;
+  late Song _currentSong;
   late bool _isFavorite;
+  late StreamSubscription<Song?> _songSub;
 
   double? _dragValue;
   bool _isDragging = false;
@@ -32,16 +34,34 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
   @override
   void initState() {
     super.initState();
-    _isFavorite = widget.song.isFavorite;
+    // Default to passed song, but grab current if playing from queue
+    _currentSong = AudioManager.instance.currentSong ?? widget.song;
+    _isFavorite = _currentSong.isFavorite;
+
+    // Listen to queue changes (Next/Prev) to update UI dynamically
+    _songSub = AudioManager.instance.currentSongStream.listen((song) {
+      if (song != null && mounted && song.id != _currentSong.id) {
+        setState(() {
+          _currentSong = song;
+          _isFavorite = song.isFavorite;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _songSub.cancel();
+    super.dispose();
   }
 
   void _toggleFavorite() async {
     final success =
-        await DBService.toggleFavorite(widget.userId, widget.song.id);
+        await DBService.toggleFavorite(widget.userId, _currentSong.id);
     if (success && mounted) {
       setState(() {
         _isFavorite = !_isFavorite;
-        widget.song.isFavorite = _isFavorite;
+        _currentSong.isFavorite = _isFavorite;
       });
     }
   }
@@ -80,7 +100,7 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
           )
         ],
       ),
-      body: SingleChildScrollView( // ✅ FIX HERE
+      body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 30.0),
           child: Column(
@@ -103,9 +123,9 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(30),
-                    child: widget.song.imageUrl != null
+                    child: _currentSong.imageUrl != null
                         ? Image.network(
-                            widget.song.imageUrl!,
+                            _currentSong.imageUrl!,
                             fit: BoxFit.cover,
                             errorBuilder: (c, e, s) => Container(
                                 color: Colors.purple.withOpacity(0.15),
@@ -121,15 +141,15 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
               ),
               const SizedBox(height: 28),
 
-              // Title & Artist
-              Text(widget.song.title,
+              // Title & Artist (Now Reactive)
+              Text(_currentSong.title,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
                       color: textPrimary)),
               const SizedBox(height: 4),
-              Text(widget.song.artist ?? '',
+              Text(_currentSong.artist ?? '',
                   style: const TextStyle(fontSize: 18, color: Colors.purple)),
               const SizedBox(height: 24),
 
@@ -206,17 +226,37 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  IconButton(
-                    icon: Icon(Icons.shuffle,
-                        color: _isShuffle ? Colors.purple : Colors.grey),
-                    onPressed: () =>
-                        setState(() => _isShuffle = !_isShuffle),
+                  // Shuffle Button
+                  StreamBuilder<bool>(
+                    stream: widget.player.shuffleModeEnabledStream,
+                    builder: (context, snapshot) {
+                      final isShuffle = snapshot.data ?? false;
+                      return IconButton(
+                        icon: Icon(Icons.shuffle,
+                            color: isShuffle ? Colors.purple : Colors.grey),
+                        onPressed: () async {
+                          final enable = !isShuffle;
+                          if (enable) await widget.player.shuffle();
+                          await widget.player.setShuffleModeEnabled(enable);
+                        },
+                      );
+                    },
                   ),
+
+                  // Previous Button
                   IconButton(
                     icon: Icon(Icons.skip_previous, color: textPrimary),
                     iconSize: 36,
-                    onPressed: () {},
+                    onPressed: () {
+                      if (widget.player.hasPrevious) {
+                        widget.player.seekToPrevious();
+                      } else {
+                        widget.player.seek(Duration.zero); // Reset if at start
+                      }
+                    },
                   ),
+
+                  // Play/Pause Button
                   SizedBox(
                     width: 80,
                     height: 80,
@@ -240,16 +280,39 @@ class _MusicPlayerPageState extends State<MusicPlayerPage> {
                       },
                     ),
                   ),
+
+                  // Next Button
                   IconButton(
                     icon: Icon(Icons.skip_next, color: textPrimary),
                     iconSize: 36,
-                    onPressed: () {},
+                    onPressed: () {
+                      if (widget.player.hasNext) {
+                        widget.player.seekToNext();
+                      }
+                    },
                   ),
-                  IconButton(
-                    icon: Icon(Icons.repeat,
-                        color: _isRepeat ? Colors.purple : Colors.grey),
-                    onPressed: () =>
-                        setState(() => _isRepeat = !_isRepeat),
+
+                  // Repeat Button
+                  StreamBuilder<LoopMode>(
+                    stream: widget.player.loopModeStream,
+                    builder: (context, snapshot) {
+                      final mode = snapshot.data ?? LoopMode.off;
+                      return IconButton(
+                        icon: Icon(
+                          mode == LoopMode.one ? Icons.repeat_one : Icons.repeat,
+                          color: mode != LoopMode.off ? Colors.purple : Colors.grey,
+                        ),
+                        onPressed: () {
+                          if (mode == LoopMode.off) {
+                            widget.player.setLoopMode(LoopMode.all);
+                          } else if (mode == LoopMode.all) {
+                            widget.player.setLoopMode(LoopMode.one);
+                          } else {
+                            widget.player.setLoopMode(LoopMode.off);
+                          }
+                        },
+                      );
+                    },
                   ),
                 ],
               ),
