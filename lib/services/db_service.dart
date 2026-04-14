@@ -21,33 +21,33 @@ class DBService {
     );
     return jsonDecode(response.body);
   }
-  
-  static Future<bool> changePassword({
-  required int userId,
-  required String username,
-  required String currentPassword,
-  required String newPassword,
-}) async {
-  try {
-    final response = await http.post(
-      Uri.parse("$baseUrl/data.php?type=change_password"),
-      body: {
-        "user_id": userId.toString(),
-        "username": username,
-        "current_password": currentPassword,
-        "new_password": newPassword,
-      },
-    );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return data['success'] == true;
+  static Future<bool> changePassword({
+    required int userId,
+    required String username,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/data.php?type=change_password"),
+        body: {
+          "user_id": userId.toString(),
+          "username": username,
+          "current_password": currentPassword,
+          "new_password": newPassword,
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      print("Change password error: $e");
     }
-  } catch (e) {
-    print("Change password error: $e");
+    return false;
   }
-  return false;
-}
 
   static Future<List<Song>> fetchAllSongs(int userId) async {
     try {
@@ -100,32 +100,73 @@ class DBService {
     return res.statusCode == 200 ? jsonDecode(res.body) : [];
   }
 
-  static Future<bool> uploadSong({
-  required String title,
-  required String artistName,          // ← was: artistId
-  required Uint8List audioBytes,
-  required String audioName,
-  required Uint8List imageBytes,
-  required String imageName,
-}) async {
-  try {
-    var request = http.MultipartRequest(
-      'POST',
-      Uri.parse("$baseUrl/upload_song.php"),
-    );
-    request.fields['title'] = title;
-    request.fields['artist_name'] = artistName;  // ← was: artist_id / artistId
-    request.files.add(
-      http.MultipartFile.fromBytes('audio', audioBytes, filename: audioName),
-    );
-    request.files.add(
-      http.MultipartFile.fromBytes('image', imageBytes, filename: imageName),
-    );
-    var streamedResponse = await request.send();
-    var response = await http.Response.fromStream(streamedResponse);
-    return jsonDecode(response.body)['success'] == true;
-  } catch (e) {
+  // --- PREFERENCES API ---
+  static Future<bool> getDarkMode(int userId) async {
+    try {
+      final res = await http.get(Uri.parse("$baseUrl/preferences.php?user_id=$userId"));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        return data['dark_mode'] == 1; // Returns true if dark mode is enabled in the DB
+      }
+    } catch (e) {
+      print("Pref error: $e");
+    }
     return false;
   }
-}
+
+  static Future<void> saveDarkMode(int userId, bool isDark) async {
+    try {
+      await http.post(
+        Uri.parse("$baseUrl/preferences.php"),
+        body: {
+          "user_id": userId.toString(),
+          "dark_mode": isDark ? "1" : "0", // Sends 1 for dark, 0 for light
+        }
+      );
+    } catch (e) {
+      print("Pref save error: $e");
+    }
+  }
+
+  static Future<bool> uploadSong({
+    required String title,
+    required String artistName,
+    required Uint8List audioBytes,
+    required String audioName,
+    required Uint8List imageBytes,
+    required String imageName,
+  }) async {
+    try {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse("$baseUrl/upload_song.php"),
+      );
+      request.fields['title'] = title;
+      request.fields['artist_name'] = artistName;
+      request.files.add(
+        http.MultipartFile.fromBytes('audio', audioBytes, filename: audioName),
+      );
+      request.files.add(
+        http.MultipartFile.fromBytes('image', imageBytes, filename: imageName),
+      );
+      
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+      
+      if (response.statusCode == 200) {
+        try {
+          return jsonDecode(response.body)['success'] == true;
+        } catch(e) {
+          print("JSON Decode error on upload. Server returned: ${response.body}");
+          return false;
+        }
+      } else {
+        print("Upload failed with server status code: ${response.statusCode}");
+        return false;
+      }
+    } catch (e) {
+      print("Upload exception: $e");
+      return false;
+    }
+  }
 }

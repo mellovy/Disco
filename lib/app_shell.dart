@@ -76,6 +76,10 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _loadProfile() async {
+    // Fetch Dark Mode from the database
+    final isDark = await DBService.getDarkMode(widget.userId);
+    themeModeNotifier.value = isDark ? ThemeMode.dark : ThemeMode.light;
+
     final data = await _Prefs.loadProfile(widget.userId);
     if (data != null && mounted) {
       setState(() {
@@ -124,6 +128,8 @@ class _AppShellState extends State<AppShell> {
   // ── Logout ────────────────────────────────────────────────────────────────
   void _logout() {
     _audioPlayer.stop();
+    // Return to light mode automatically when logging out
+    themeModeNotifier.value = ThemeMode.light;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (_) => false);
   }
 
@@ -946,6 +952,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                     onChanged: (v) {
                       themeModeNotifier.value =
                           v ? ThemeMode.dark : ThemeMode.light;
+                      DBService.saveDarkMode(widget.userId, v); // Save to database
                       setState(() {}); // refresh sheet colors
                     },
                   ),
