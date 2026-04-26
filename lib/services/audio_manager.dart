@@ -4,13 +4,14 @@ import '../models/song.dart';
 
 class AudioManager {
   AudioManager._internal() {
-    // Keep our internal tracker synced with just_audio (e.g. when auto-advancing to next track)
     _player.sequenceStateStream.listen((state) {
       if (state?.currentSource?.tag is Song) {
         final song = state!.currentSource!.tag as Song;
         _currentPlayingId = song.id;
+        _updateQueueFromPlayer();
       } else if (state?.currentSource == null) {
         _currentPlayingId = -1;
+        _currentQueue.clear();
       }
     });
   }
@@ -22,9 +23,15 @@ class AudioManager {
 
   ConcatenatingAudioSource? _playlist;
   int _currentPlayingId = -1;
-
-  // Expose the currently assigned playing ID to prevent race conditions
+  
+  List<Song> _currentQueue = [];
+  
   int get currentPlayingId => _currentPlayingId;
+  
+  List<Song> get currentQueue => List.unmodifiable(_currentQueue);
+  
+  final _queueStreamController = StreamController<List<Song>>.broadcast();
+  Stream<List<Song>> get queueStream => _queueStreamController.stream;
 
   Song? get currentSong {
     final tag = _player.sequenceState?.currentSource?.tag;
@@ -36,9 +43,21 @@ class AudioManager {
     return state.currentSource!.tag as Song?;
   });
 
-  // Play a single song, clearing any existing queue
+  void _updateQueueFromPlayer() {
+    final sequence = _player.sequenceState?.sequence;
+    if (sequence != null) {
+      final newQueue = <Song>[];
+      for (var source in sequence) {
+        if (source.tag is Song) {
+          newQueue.add(source.tag as Song);
+        }
+      }
+      _currentQueue = newQueue;
+      _queueStreamController.add(_currentQueue);
+    }
+  }
+
   Future<void> setSong(Song song) async {
-    // Ignore if already playing this exact single song
     if (_currentPlayingId == song.id && _playlist != null && _playlist!.length == 1) return;
 
     _currentPlayingId = song.id;
@@ -48,13 +67,13 @@ class AudioManager {
 
     final source = AudioSource.uri(Uri.parse(url), tag: song);
     
-    // Create a fresh queue with just this 1 song
     _playlist = ConcatenatingAudioSource(children: [source]);
 
     try {
       await _player.stop();
       await _player.setAudioSource(_playlist!);
       await _player.play();
+      _updateQueueFromPlayer();
     } on PlayerInterruptedException catch (e) {
       print("Interrupted setSong: $e");
     } catch (e) {
@@ -62,7 +81,6 @@ class AudioManager {
     }
   }
 
-  // Explicitly add a song to the end of the current queue
   Future<void> addToQueue(Song song) async {
     final url = song.audioUrl;
     if (url == null || url.isEmpty) return;
@@ -70,24 +88,68 @@ class AudioManager {
     final source = AudioSource.uri(Uri.parse(url), tag: song);
 
     if (_playlist == null) {
-      // If nothing is playing at all, just play it
       _playlist = ConcatenatingAudioSource(children: [source]);
       _currentPlayingId = song.id;
       try {
         await _player.setAudioSource(_playlist!);
         await _player.play();
+        _updateQueueFromPlayer();
       } catch (e) {
         print("Audio error: $e");
       }
     } else {
-      // Append to the existing queue
       await _playlist!.add(source);
       
-      // If the player had stopped because it reached the end, jump to the new song and play
       if (!_player.playing && _player.processingState == ProcessingState.completed) {
         _player.seekToNext();
         _player.play();
       }
+      _updateQueueFromPlayer();
+    }
+  }
+
+  Future<void> addMultipleToQueue(List<Song> songs) async {
+    for (var song in songs) {
+      await addToQueue(song);
+    }
+  }
+
+  Future<void> removeFromQueue(int index) async {
+    if (_playlist != null && index < _playlist!.length) {
+      final removedSource = _playlist!.sequence[index];
+      await _playlist!.removeAt(index);
+      
+      if (removedSource.tag is Song && 
+          (removedSource.tag as Song).id == currentPlayingId) {
+        await _player.stop();
+        _currentPlayingId = -1;
+      }
+      
+      _updateQueueFromPlayer();
+      _queueStreamController.add(_currentQueue);
+    }
+  }
+
+  Future<void> reorderQueue(int oldIndex, int newIndex) async {
+    if (_playlist == null) return;
+    
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    
+    final source = await _playlist!.sequence[oldIndex];
+    await _playlist!.removeAt(oldIndex);
+    await _playlist!.insert(newIndex, source);
+    
+    _updateQueueFromPlayer();
+    _queueStreamController.add(_currentQueue);
+  }
+
+  Future<void> clearQueue() async {
+    if (_playlist != null) {
+      await _playlist!.clear();
+      _currentQueue.clear();
+      _queueStreamController.add(_currentQueue);
     }
   }
 
@@ -109,13 +171,14 @@ class AudioManager {
   Future<void> play() => _player.play();
   Future<void> pause() => _player.pause();
 
-  // Fully stop playback and clear the queue
   Future<void> stop() async {
     await _player.stop();
     if (_playlist != null) {
       await _playlist!.clear();
     }
     _currentPlayingId = -1;
+    _currentQueue.clear();
+    _queueStreamController.add(_currentQueue);
   }
 
   Future<void> seekFraction(double fraction) async {
@@ -126,5 +189,8 @@ class AudioManager {
     }
   }
 
-  Future<void> dispose() => _player.dispose();
+  Future<void> dispose() async {
+    await _queueStreamController.close();
+    await _player.dispose();
+  }
 }
