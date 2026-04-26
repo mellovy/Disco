@@ -1,7 +1,5 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:http/http.dart' as http;
-import '../models/song.dart';
 
 class DBService {
   static const String baseUrl = "https://disco.dcism.org/api";
@@ -11,15 +9,25 @@ class DBService {
     String pass, {
     String? email,
   }) async {
-    final response = await http.post(
-      Uri.parse("$baseUrl/auth.php"),
-      body: {
-        "username": user,
-        "password": pass,
-        if (email != null) "email": email,
-      },
-    );
-    return jsonDecode(response.body);
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/auth.php"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "username": user,
+          "password": pass,
+          if (email != null) "email": email,
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      return {'success': false, 'error': 'Server error: ${response.statusCode}'};
+    } catch (e) {
+      print("Auth error: $e");
+      return {'success': false, 'error': e.toString()};
+    }
   }
 
   static Future<bool> changePassword({
@@ -31,12 +39,13 @@ class DBService {
     try {
       final response = await http.post(
         Uri.parse("$baseUrl/data.php?type=change_password"),
-        body: {
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
           "user_id": userId.toString(),
           "username": username,
           "current_password": currentPassword,
           "new_password": newPassword,
-        },
+        }),
       );
 
       if (response.statusCode == 200) {
@@ -55,9 +64,16 @@ class DBService {
         Uri.parse(
           "$baseUrl/data.php?type=songs&user_id=$userId&t=${DateTime.now().millisecondsSinceEpoch}",
         ),
+        headers: {"Content-Type": "application/json"},
       );
 
       if (response.statusCode == 200 && response.body.isNotEmpty) {
+        // Check if response is JSON
+        if (response.body.trim().startsWith('<')) {
+          print("Got HTML instead of JSON");
+          return [];
+        }
+        
         List data = jsonDecode(response.body);
         return data.map((s) {
           int id = int.parse(s['song_id'].toString());
@@ -81,7 +97,11 @@ class DBService {
     try {
       final res = await http.post(
         Uri.parse("$baseUrl/data.php?type=toggle_favorite"),
-        body: {"user_id": userId.toString(), "song_id": songId.toString()},
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "user_id": userId.toString(),
+          "song_id": songId.toString(),
+        }),
       );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
@@ -96,17 +116,20 @@ class DBService {
   static Future<List<dynamic>> getPlaylists(int userId) async {
     final res = await http.get(
       Uri.parse("$baseUrl/data.php?type=playlists&user_id=$userId"),
+      headers: {"Content-Type": "application/json"},
     );
     return res.statusCode == 200 ? jsonDecode(res.body) : [];
   }
 
-  // --- PREFERENCES API ---
   static Future<bool> getDarkMode(int userId) async {
     try {
-      final res = await http.get(Uri.parse("$baseUrl/preferences.php?user_id=$userId"));
+      final res = await http.get(
+        Uri.parse("$baseUrl/preferences.php?user_id=$userId"),
+        headers: {"Content-Type": "application/json"},
+      );
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        return data['dark_mode'] == 1; 
+        return data['dark_mode'] == 1;
       }
     } catch (e) {
       print("Pref error: $e");
@@ -118,17 +141,17 @@ class DBService {
     try {
       await http.post(
         Uri.parse("$baseUrl/preferences.php"),
-        body: {
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
           "user_id": userId.toString(),
-          "dark_mode": isDark ? "1" : "0", 
-        }
+          "dark_mode": isDark ? "1" : "0",
+        }),
       );
     } catch (e) {
       print("Pref save error: $e");
     }
   }
 
-  // Changed to return a String error message instead of a boolean
   static Future<String?> uploadSong({
     required String title,
     required String artistName,
@@ -142,6 +165,7 @@ class DBService {
         'POST',
         Uri.parse("$baseUrl/upload_song.php"),
       );
+      // For multipart, we still use fields (not JSON)
       request.fields['title'] = title;
       request.fields['artist_name'] = artistName;
       request.files.add(
@@ -158,9 +182,9 @@ class DBService {
         try {
           final decoded = jsonDecode(response.body);
           if (decoded['success'] == true) {
-            return null; // Return null on success
+            return null;
           } else {
-            return decoded['error'] ?? "Unknown server error"; 
+            return decoded['error'] ?? "Unknown server error";
           }
         } catch(e) {
           return "JSON Decode error: ${response.body}";
