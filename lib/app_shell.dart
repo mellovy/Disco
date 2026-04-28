@@ -12,6 +12,7 @@ import 'music_player.dart';
 import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import 'main.dart' show themeModeNotifier;
+import 'pixel_colors.dart';
 import 'services/db_service.dart';
 import 'services/audio_manager.dart';
 
@@ -27,12 +28,14 @@ class _Prefs {
   }) async {
     final p = await _p;
     final key = 'profile_$userId';
-    await p.setString(key, jsonEncode({
-      'displayName': displayName,
-      'bio': bio,
-      'colorIndex': colorIndex,
-      'avatar': avatarBytes != null ? base64Encode(avatarBytes) : null,
-    }));
+    await p.setString(
+        key,
+        jsonEncode({
+          'displayName': displayName,
+          'bio': bio,
+          'colorIndex': colorIndex,
+          'avatar': avatarBytes != null ? base64Encode(avatarBytes) : null,
+        }));
   }
 
   static Future<Map<String, dynamic>?> loadProfile(int userId) async {
@@ -59,15 +62,25 @@ class _AppShellState extends State<AppShell> {
   Uint8List? _avatarImageBytes;
   bool _profileLoaded = false;
 
+  // Cached song list for queue building
+  List<Song> _cachedSongs = [];
+
   final List<Color> _avatarColors = [
-    Colors.purple, Colors.deepPurple, Colors.indigo, Colors.blue,
-    Colors.teal, Colors.green, Colors.orange, Colors.pink, Colors.red,
+    Colors.purple,
+    Colors.deepPurple,
+    Colors.indigo,
+    Colors.blue,
+    Colors.teal,
+    Colors.green,
+    Colors.orange,
+    Colors.pink,
+    Colors.red,
   ];
 
   int _selectedIndex = 0;
   Song? _currentSong;
   bool _playerMaximized = false;
-  
+
   late StreamSubscription<Song?> _songSub;
 
   @override
@@ -75,12 +88,18 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     _displayName = widget.username;
     _loadProfile();
+    _prefetchSongs();
 
     _songSub = AudioManager.instance.currentSongStream.listen((song) {
       if (mounted && _currentSong?.id != song?.id) {
         setState(() => _currentSong = song);
       }
     });
+  }
+
+  Future<void> _prefetchSongs() async {
+    final songs = await DBService.fetchAllSongs(widget.userId);
+    if (mounted) setState(() => _cachedSongs = songs);
   }
 
   Future<void> _loadProfile() async {
@@ -113,15 +132,31 @@ class _AppShellState extends State<AppShell> {
   }
 
   // ── Player logic ──────────────────────────────────────────────────────────
+
+  /// Opens the player for [song]. If we have a cached song list, load the
+  /// full list as the queue starting at this song so next/prev/shuffle works.
   void _openPlayer(Song song) {
     setState(() {
       _currentSong = song;
       _playerMaximized = true;
     });
 
-    // Always set the song (which clears the queue and plays this one)
-    if (AudioManager.instance.currentPlayingId != song.id) {
-      AudioManager.instance.setSong(song);
+    final songs = _cachedSongs;
+    if (songs.isNotEmpty) {
+      // Find the index of the tapped song; fall back to 0 if not found.
+      final idx = songs.indexWhere((s) => s.id == song.id);
+      final startIndex = idx >= 0 ? idx : 0;
+
+      // Only reload the queue if the song changed or there's no active queue.
+      if (AudioManager.instance.currentPlayingId != song.id ||
+          AudioManager.instance.currentQueue.length <= 1) {
+        AudioManager.instance.setQueue(songs, startIndex: startIndex);
+      }
+    } else {
+      // Fallback: just play this one song if list hasn't loaded yet.
+      if (AudioManager.instance.currentPlayingId != song.id) {
+        AudioManager.instance.setSong(song);
+      }
     }
   }
 
@@ -132,7 +167,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _logout() {
-    AudioManager.instance.pause(); 
+    AudioManager.instance.pause();
     themeModeNotifier.value = ThemeMode.light;
     Navigator.of(context).pushNamedAndRemoveUntil('/', (_) => false);
   }
@@ -141,7 +176,7 @@ class _AppShellState extends State<AppShell> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text("Log Out"),
         content: const Text("Are you sure you want to log out?"),
         actions: [
@@ -150,12 +185,14 @@ class _AppShellState extends State<AppShell> {
             child: const Text("Cancel"),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
+            style:
+                ElevatedButton.styleFrom(backgroundColor: Colors.purple),
             onPressed: () {
               Navigator.pop(context);
               _logout();
             },
-            child: const Text("Log Out", style: TextStyle(color: Colors.white)),
+            child: const Text("Log Out",
+                style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -188,7 +225,7 @@ class _AppShellState extends State<AppShell> {
             _avatarColorIndex = colorIndex;
             _avatarImageBytes = imageBytes;
           });
-          _saveProfile(); 
+          _saveProfile();
         },
       ),
     );
@@ -211,19 +248,26 @@ class _AppShellState extends State<AppShell> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final bgColor = theme.scaffoldBackgroundColor;
-    final navBg = isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF1E6FF);
+    final navBg =
+        isDark ? PixelColors.darkSurface : PixelColors.accentPink;
 
     final pages = [
       HomePage(
-          username: widget.username,
-          userId: widget.userId,
-          onOpenPlayer: _openPlayer),
+        username: widget.username,
+        userId: widget.userId,
+        onOpenPlayer: _openPlayer,
+        onSongsLoaded: (songs) {
+          // Keep the cache updated when homepage loads songs
+          if (mounted) setState(() => _cachedSongs = songs);
+        },
+      ),
       SearchPage(
         onOpenPlayer: _openPlayer,
         onProfileTap: _showProfile,
         username: _displayName,
         avatarColor: _avatarColors[_avatarColorIndex],
         avatarImageBytes: _avatarImageBytes,
+        userId: widget.userId,
       ),
       LibraryPage(userId: widget.userId),
       const UploadSongPage(),
@@ -237,25 +281,45 @@ class _AppShellState extends State<AppShell> {
 
           if (_selectedIndex != 1)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 8,
+              top: MediaQuery.of(context).padding.top + 20,
               right: 12,
               child: GestureDetector(
                 onTap: _showProfile,
-                child: CircleAvatar(
-                  radius: 20,
-                  backgroundColor: _avatarColors[_avatarColorIndex],
-                  backgroundImage: _avatarImageBytes != null
-                      ? MemoryImage(_avatarImageBytes!)
-                      : null,
-                  child: _avatarImageBytes == null
-                      ? Text(
-                          _displayName.isNotEmpty
-                              ? _displayName[0].toUpperCase()
-                              : '?',
-                          style: const TextStyle(
-                              color: Colors.white, fontWeight: FontWeight.bold),
-                        )
-                      : null,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _avatarColors[_avatarColorIndex],
+                    border: Border.all(
+                      color: isDark ? PixelColors.neonPink : Colors.white,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (isDark
+                                ? PixelColors.neonPink
+                                : PixelColors.accentPink)
+                            .withOpacity(0.4),
+                        blurRadius: 0,
+                        offset: const Offset(2, 2),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.hardEdge,
+                  child: _avatarImageBytes != null
+                      ? Image.memory(_avatarImageBytes!, fit: BoxFit.cover)
+                      : Center(
+                          child: Text(
+                            _displayName.isNotEmpty
+                                ? _displayName[0].toUpperCase()
+                                : '?',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontFamily: 'monospace',
+                                fontSize: 16),
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -263,10 +327,11 @@ class _AppShellState extends State<AppShell> {
           if (_currentSong != null) ...[
             if (_playerMaximized)
               MusicPlayerPage(
-                  song: _currentSong!,
-                  userId: widget.userId,
-                  player: AudioManager.instance.player,
-                  onClose: () => setState(() => _playerMaximized = false))
+                song: _currentSong!,
+                userId: widget.userId,
+                player: AudioManager.instance.player,
+                onClose: () => setState(() => _playerMaximized = false),
+              )
             else
               Positioned(
                 bottom: 10,
@@ -280,17 +345,19 @@ class _AppShellState extends State<AppShell> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         type: BottomNavigationBarType.fixed,
-        selectedItemColor: Colors.purple,
-        unselectedItemColor: Colors.grey,
+        selectedItemColor: isDark ? PixelColors.neonPink : Colors.white,
+        unselectedItemColor: isDark ? const Color(0xFF555577) : Colors.white.withOpacity(0.6),
         backgroundColor: navBg,
         onTap: (i) => setState(() {
           _selectedIndex = i;
           _playerMaximized = false;
         }),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.home_filled), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-          BottomNavigationBarItem(icon: Icon(Icons.library_music), label: 'Library'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.library_music), label: 'Library'),
           BottomNavigationBarItem(icon: Icon(Icons.upload), label: 'Upload'),
         ],
       ),
@@ -303,25 +370,53 @@ class _AppShellState extends State<AppShell> {
       onTap: () => setState(() => _playerMaximized = true),
       child: Material(
         elevation: 12,
-        borderRadius: BorderRadius.circular(15),
-        color: isDark ? const Color(0xFF2A2A3E) : Colors.white,
+        borderRadius: BorderRadius.zero,
+        color: isDark ? PixelColors.darkCard : PixelColors.lightCard,
         child: Container(
-          height: 75,
+          height: 72,
           padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: isDark ? PixelColors.neonPink : PixelColors.accentOrange,
+              width: 2,
+            ),
+          ),
           child: Row(
             children: [
+              // Album art
               ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.network(
-                  _currentSong!.imageUrl!,
-                  width: 50,
-                  height: 50,
-                  fit: BoxFit.cover,
-                  errorBuilder: (c, e, s) => Container(
-                    color: Colors.purple[50],
-                    child: const Icon(Icons.music_note, color: Colors.purple),
-                  ),
-                ),
+                borderRadius: BorderRadius.zero,
+                child: _currentSong?.imageUrl != null
+                    ? Image.network(
+                        _currentSong!.imageUrl!,
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                        errorBuilder: (c, e, s) => Container(
+                          width: 48,
+                          height: 48,
+                          color: isDark
+                              ? PixelColors.neonPink.withOpacity(0.15)
+                              : PixelColors.accentOrange.withOpacity(0.15),
+                          child: Icon(Icons.music_note,
+                              color: isDark
+                                  ? PixelColors.neonPink
+                                  : PixelColors.accentOrange,
+                              size: 24),
+                        ),
+                      )
+                    : Container(
+                        width: 48,
+                        height: 48,
+                        color: isDark
+                            ? PixelColors.neonPink.withOpacity(0.15)
+                            : PixelColors.accentOrange.withOpacity(0.15),
+                        child: Icon(Icons.music_note,
+                            color: isDark
+                                ? PixelColors.neonPink
+                                : PixelColors.accentOrange,
+                            size: 24),
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -329,63 +424,79 @@ class _AppShellState extends State<AppShell> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_currentSong!.title,
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: textColor),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    Text(_currentSong!.artist ?? '',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
+                    Text(
+                      _currentSong!.title,
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: textColor),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      _currentSong!.artist ?? '',
+                      style:
+                          const TextStyle(fontSize: 11, color: Colors.grey),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ],
                 ),
               ),
-              IconButton(
-                icon: Icon(Icons.skip_previous, color: textColor),
-                onPressed: () {
-                  if (AudioManager.instance.player.hasPrevious) {
-                    AudioManager.instance.player.seekToPrevious();
-                  } else {
-                    AudioManager.instance.player.seek(Duration.zero);
-                  }
-                },
-              ),
               StreamBuilder<PlayerState>(
-                stream: AudioManager.instance.player.playerStateStream, 
+                stream: AudioManager.instance.player.playerStateStream,
                 builder: (context, snapshot) {
                   final playing = snapshot.data?.playing ?? false;
-                  return SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      icon: Icon(
-                          playing
-                              ? Icons.pause_circle_filled
-                              : Icons.play_circle_filled,
-                          size: 35,
-                          color: Colors.purple),
-                      onPressed: () =>
-                          playing ? AudioManager.instance.pause() : AudioManager.instance.play(),
-                    ),
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.skip_previous,
+                            color: textColor, size: 22),
+                        onPressed: () {
+                          if (AudioManager.instance.player.hasPrevious) {
+                            AudioManager.instance.player.seekToPrevious();
+                          } else {
+                            AudioManager.instance.player
+                                .seek(Duration.zero);
+                          }
+                        },
+                      ),
+                      SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            playing
+                                ? Icons.pause_circle_filled
+                                : Icons.play_circle_filled,
+                            size: 36,
+                            color: Colors.purple,
+                          ),
+                          onPressed: () => playing
+                              ? AudioManager.instance.pause()
+                              : AudioManager.instance.play(),
+                        ),
+                      ),
+                      IconButton(
+                        icon:
+                            Icon(Icons.skip_next, color: textColor, size: 22),
+                        onPressed: () {
+                          if (AudioManager.instance.player.hasNext) {
+                            AudioManager.instance.player.seekToNext();
+                          }
+                        },
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.close, size: 18, color: textColor),
+                        onPressed: () {
+                          AudioManager.instance.stop();
+                          setState(() => _currentSong = null);
+                        },
+                      ),
+                    ],
                   );
-                },
-              ),
-              IconButton(
-                icon: Icon(Icons.skip_next, color: textColor),
-                onPressed: () {
-                  if (AudioManager.instance.player.hasNext) {
-                    AudioManager.instance.player.seekToNext();
-                  }
-                },
-              ),
-              IconButton(
-                icon: Icon(Icons.close, size: 20, color: textColor),
-                onPressed: () {
-                  AudioManager.instance.stop();
                 },
               ),
             ],
@@ -397,7 +508,7 @@ class _AppShellState extends State<AppShell> {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Profile & Settings sheets remain exactly the same below...
+// Profile & Settings sheets
 // ═══════════════════════════════════════════════════════════════
 class _ProfileSheet extends StatefulWidget {
   final String username;
@@ -480,7 +591,8 @@ class _ProfileSheetState extends State<_ProfileSheet> {
                     color: isDark ? Colors.white : Colors.black87)),
             const Divider(),
             ListTile(
-              leading: const Icon(Icons.photo_library, color: Colors.purple),
+              leading:
+                  const Icon(Icons.photo_library, color: Colors.purple),
               title: Text('Choose from Gallery',
                   style: TextStyle(
                       color: isDark ? Colors.white : Colors.black87)),
@@ -531,171 +643,321 @@ class _ProfileSheetState extends State<_ProfileSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final sheetBg = isDark ? const Color(0xFF2A2A3E) : Colors.white;
-    final textPrimary = isDark ? Colors.white : Colors.black87;
-    final textSecondary = isDark ? Colors.grey[400]! : Colors.grey;
-    final fillColor = isDark ? const Color(0xFF3A3A4E) : Colors.grey[100]!;
+    final accent = isDark ? PixelColors.neonPink : PixelColors.accentPink;
+    final accentCyan = isDark ? PixelColors.neonCyan : PixelColors.accentMint;
+    final sheetBg = isDark ? PixelColors.darkSurface : PixelColors.lightBg;
+    final cardColor = isDark ? PixelColors.darkCard : PixelColors.lightCard;
+    final borderColor = isDark ? PixelColors.darkBorder : PixelColors.lightBorder;
+    final textPrimary = isDark ? Colors.white : PixelColors.darkBg;
+    final textSecondary = isDark ? PixelColors.neonPurple : PixelColors.accentLavender;
+    final fillColor = isDark ? PixelColors.darkCard : Colors.white;
     final color = widget.avatarColors[_selectedColorIndex];
 
     return Container(
       decoration: BoxDecoration(
         color: sheetBg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: accent, width: 3)),
       ),
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: isDark ? Colors.grey[600] : Colors.grey[300],
-                  borderRadius: BorderRadius.circular(4)),
+            // Pixel drag handle
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                color: accent.withOpacity(0.5),
+              ),
             ),
             const SizedBox(height: 16),
+
+            // Header row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('Profile',
-                    style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: textPrimary)),
-                TextButton.icon(
-                  onPressed: () => _isEditing
+                Row(
+                  children: [
+                    Container(width: 5, height: 22, color: accent),
+                    const SizedBox(width: 10),
+                    Text(
+                      'PROFILE',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: accent,
+                        letterSpacing: 3,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                ),
+                GestureDetector(
+                  onTap: () => _isEditing
                       ? _saveChanges()
                       : setState(() => _isEditing = true),
-                  icon: Icon(_isEditing ? Icons.check : Icons.edit, size: 16),
-                  label: Text(_isEditing ? 'Save' : 'Edit'),
-                  style: TextButton.styleFrom(foregroundColor: Colors.purple),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Stack(
-              alignment: Alignment.bottomRight,
-              children: [
-                CircleAvatar(
-                  radius: 52,
-                  backgroundColor: color,
-                  backgroundImage: _avatarImageBytes != null
-                      ? MemoryImage(_avatarImageBytes!)
-                      : null,
-                  child: _avatarImageBytes == null
-                      ? Text(
-                          _nameController.text.isNotEmpty
-                              ? _nameController.text[0].toUpperCase()
-                              : '?',
-                          style: const TextStyle(
-                              fontSize: 40,
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold),
-                        )
-                      : null,
-                ),
-                if (_isEditing)
-                  GestureDetector(
-                    onTap: () => _showImageOptions(isDark),
-                    child: Container(
-                      padding: const EdgeInsets.all(7),
-                      decoration: BoxDecoration(
-                        color: Colors.purple,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: sheetBg, width: 2),
-                      ),
-                      child: const Icon(Icons.camera_alt,
-                          color: Colors.white, size: 16),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _isEditing ? accent : Colors.transparent,
+                      border: Border.all(color: accent, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: accent.withOpacity(0.3),
+                          blurRadius: 0,
+                          offset: const Offset(2, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _isEditing ? Icons.check : Icons.edit,
+                          size: 13,
+                          color: _isEditing ? Colors.white : accent,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          _isEditing ? 'SAVE' : 'EDIT',
+                          style: TextStyle(
+                            color: _isEditing ? Colors.white : accent,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w900,
+                            fontSize: 11,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+                ),
               ],
             ),
+            const SizedBox(height: 20),
+
+            // Avatar + name row
+            Row(
+              children: [
+                // Square pixel avatar
+                Stack(
+                  children: [
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: color,
+                        border: Border.all(color: accent, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: accent.withOpacity(0.4),
+                            blurRadius: 0,
+                            offset: const Offset(4, 4),
+                          ),
+                        ],
+                      ),
+                      clipBehavior: Clip.hardEdge,
+                      child: _avatarImageBytes != null
+                          ? Image.memory(_avatarImageBytes!, fit: BoxFit.cover)
+                          : Center(
+                              child: Text(
+                                _nameController.text.isNotEmpty
+                                    ? _nameController.text[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  fontSize: 36,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ),
+                    ),
+                    if (_isEditing)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: GestureDetector(
+                          onTap: () => _showImageOptions(isDark),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            color: accent,
+                            child: const Icon(Icons.camera_alt,
+                                color: Colors.white, size: 14),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _isEditing
+                          ? TextField(
+                              controller: _nameController,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                color: textPrimary,
+                                fontFamily: 'monospace',
+                                letterSpacing: 1,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: 'DISPLAY NAME',
+                                hintStyle: TextStyle(
+                                  color: accent.withOpacity(0.5),
+                                  fontFamily: 'monospace',
+                                  fontSize: 12,
+                                ),
+                                filled: true,
+                                fillColor: fillColor,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.zero,
+                                  borderSide: BorderSide(color: borderColor, width: 2),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.zero,
+                                  borderSide: BorderSide(color: borderColor, width: 2),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.zero,
+                                  borderSide: BorderSide(color: accent, width: 2),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
+                              ),
+                            )
+                          : Text(
+                              _nameController.text,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w900,
+                                color: textPrimary,
+                                fontFamily: 'monospace',
+                                letterSpacing: 1,
+                              ),
+                            ),
+                      const SizedBox(height: 8),
+                      _isEditing
+                          ? TextField(
+                              controller: _bioController,
+                              maxLength: 60,
+                              style: TextStyle(
+                                color: textSecondary,
+                                fontSize: 11,
+                                fontFamily: 'monospace',
+                              ),
+                              decoration: InputDecoration(
+                                hintText: 'SHORT BIO...',
+                                hintStyle: TextStyle(
+                                  color: accentCyan.withOpacity(0.5),
+                                  fontFamily: 'monospace',
+                                  fontSize: 11,
+                                ),
+                                filled: true,
+                                fillColor: fillColor,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.zero,
+                                  borderSide: BorderSide(color: borderColor, width: 2),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.zero,
+                                  borderSide: BorderSide(color: borderColor, width: 2),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.zero,
+                                  borderSide: BorderSide(color: accent, width: 2),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
+                                counterText: '',
+                              ),
+                            )
+                          : Text(
+                              _bioController.text,
+                              style: TextStyle(
+                                color: textSecondary,
+                                fontSize: 11,
+                                fontFamily: 'monospace',
+                                letterSpacing: 1,
+                              ),
+                            ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            // Color picker (editing only)
             if (_isEditing && _avatarImageBytes == null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              Text(
+                'AVATAR COLOR',
+                style: TextStyle(
+                  color: borderColor,
+                  fontSize: 10,
+                  letterSpacing: 2,
+                  fontFamily: 'monospace',
+                ),
+              ),
+              const SizedBox(height: 8),
               Row(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: List.generate(widget.avatarColors.length, (i) {
                   return GestureDetector(
                     onTap: () => setState(() => _selectedColorIndex = i),
                     child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      width: 26,
-                      height: 26,
+                      margin: const EdgeInsets.only(right: 6),
+                      width: 24,
+                      height: 24,
                       decoration: BoxDecoration(
                         color: widget.avatarColors[i],
-                        shape: BoxShape.circle,
                         border: _selectedColorIndex == i
-                            ? Border.all(
-                                color: isDark ? Colors.white : Colors.black87,
-                                width: 2.5)
-                            : null,
+                            ? Border.all(color: accent, width: 2)
+                            : Border.all(color: borderColor, width: 1),
+                        boxShadow: _selectedColorIndex == i
+                            ? [
+                                BoxShadow(
+                                  color: accent.withOpacity(0.5),
+                                  blurRadius: 0,
+                                  offset: const Offset(2, 2),
+                                )
+                              ]
+                            : [],
                       ),
                     ),
                   );
                 }),
               ),
             ],
-            const SizedBox(height: 16),
-            _isEditing
-                ? TextField(
-                    controller: _nameController,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: textPrimary),
-                    decoration: InputDecoration(
-                      hintText: 'Display name',
-                      filled: true,
-                      fillColor: fillColor,
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                    ),
-                  )
-                : Text(_nameController.text,
-                    style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: textPrimary)),
-            const SizedBox(height: 8),
-            _isEditing
-                ? TextField(
-                    controller: _bioController,
-                    textAlign: TextAlign.center,
-                    maxLength: 60,
-                    style: TextStyle(color: textSecondary, fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: 'Short bio...',
-                      filled: true,
-                      fillColor: fillColor,
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      counterText: '',
-                    ),
-                  )
-                : Text(_bioController.text,
-                    style: TextStyle(color: textSecondary, fontSize: 13)),
+
             const SizedBox(height: 24),
-            Divider(color: isDark ? Colors.grey[700] : Colors.grey[300]),
+
+            // Divider
+            Container(height: 2, color: borderColor.withOpacity(0.4)),
             const SizedBox(height: 8),
-            _SheetTile(
+
+            // Action tiles — pixel style
+            _PixelSheetTile(
               icon: Icons.settings,
-              label: "Settings",
-              isDark: isDark,
+              label: 'SETTINGS',
+              accent: accentCyan,
+              textColor: textPrimary,
+              borderColor: borderColor,
+              cardColor: cardColor,
               onTap: widget.onSettings,
             ),
-            _SheetTile(
+            const SizedBox(height: 6),
+            _PixelSheetTile(
               icon: Icons.logout,
-              label: "Log Out",
-              color: Colors.red,
-              isDark: isDark,
+              label: 'LOG OUT',
+              accent: const Color(0xFFFF6B6B),
+              textColor: const Color(0xFFFF6B6B),
+              borderColor: const Color(0xFFFF6B6B),
+              cardColor: cardColor,
               onTap: widget.onLogout,
             ),
           ],
@@ -705,30 +967,61 @@ class _ProfileSheetState extends State<_ProfileSheet> {
   }
 }
 
-class _SheetTile extends StatelessWidget {
+class _PixelSheetTile extends StatelessWidget {
   final IconData icon;
   final String label;
-  final Color? color;
-  final bool isDark;
+  final Color accent;
+  final Color textColor;
+  final Color borderColor;
+  final Color cardColor;
   final VoidCallback onTap;
 
-  const _SheetTile({
+  const _PixelSheetTile({
     required this.icon,
     required this.label,
+    required this.accent,
+    required this.textColor,
+    required this.borderColor,
+    required this.cardColor,
     required this.onTap,
-    required this.isDark,
-    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? (isDark ? Colors.white : Colors.black87);
-    return ListTile(
-      leading: Icon(icon, color: c),
-      title: Text(label, style: TextStyle(color: c, fontWeight: FontWeight.w500)),
-      trailing: Icon(Icons.chevron_right,
-          color: isDark ? Colors.grey[600] : Colors.grey[400]),
+    return GestureDetector(
       onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: cardColor,
+          border: Border.all(color: borderColor, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: accent.withOpacity(0.2),
+              blurRadius: 0,
+              offset: const Offset(3, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: accent, size: 18),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                color: textColor,
+                fontFamily: 'monospace',
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+                letterSpacing: 2,
+              ),
+            ),
+            const Spacer(),
+            Icon(Icons.chevron_right, color: borderColor, size: 18),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -762,7 +1055,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
       builder: (ctx) {
         return StatefulBuilder(builder: (ctx, setDlg) {
           return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16)),
             title: const Text("Change Password"),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -796,9 +1090,11 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                         borderRadius: BorderRadius.circular(10),
                         borderSide: BorderSide.none),
                     suffixIcon: IconButton(
-                      icon: Icon(
-                          obscureNew ? Icons.visibility_off : Icons.visibility),
-                      onPressed: () => setDlg(() => obscureNew = !obscureNew),
+                      icon: Icon(obscureNew
+                          ? Icons.visibility_off
+                          : Icons.visibility),
+                      onPressed: () =>
+                          setDlg(() => obscureNew = !obscureNew),
                     ),
                   ),
                 ),
@@ -829,8 +1125,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                 child: const Text("Cancel"),
               ),
               ElevatedButton(
-                style:
-                    ElevatedButton.styleFrom(backgroundColor: Colors.purple),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.purple),
                 onPressed: isLoading
                     ? null
                     : () async {
@@ -839,7 +1135,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                             confirmCtrl.text.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                  content: Text("Please fill in all fields.")));
+                                  content:
+                                      Text("Please fill in all fields.")));
                           return;
                         }
                         if (newCtrl.text != confirmCtrl.text) {
@@ -866,11 +1163,11 @@ class _SettingsSheetState extends State<_SettingsSheet> {
                           );
                           if (!ctx.mounted) return;
                           Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text(success
-                                ? "Password changed successfully!"
-                                : "Current password is incorrect."),
-                          ));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                  content: Text(success
+                                      ? "Password changed successfully!"
+                                      : "Current password is incorrect.")));
                         } catch (e) {
                           if (!ctx.mounted) return;
                           Navigator.pop(ctx);
@@ -897,175 +1194,284 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final sheetBg = isDark ? const Color(0xFF2A2A3E) : Colors.white;
-    final textPrimary = isDark ? Colors.white : Colors.black87;
+    final accent = isDark ? PixelColors.neonPink : PixelColors.accentPink;
+    final accentCyan = isDark ? PixelColors.neonCyan : PixelColors.accentMint;
+    final sheetBg = isDark ? PixelColors.darkSurface : PixelColors.lightBg;
+    final cardColor = isDark ? PixelColors.darkCard : PixelColors.lightCard;
+    final borderColor = isDark ? PixelColors.darkBorder : PixelColors.lightBorder;
+    final textPrimary = isDark ? Colors.white : PixelColors.darkBg;
+    final textSecondary = isDark ? PixelColors.neonPurple : PixelColors.accentLavender;
 
     return Container(
       decoration: BoxDecoration(
         color: sheetBg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: accent, width: 3)),
       ),
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Pixel drag handle
             Center(
               child: Container(
-                width: 40,
+                width: 36,
                 height: 4,
-                decoration: BoxDecoration(
-                    color: isDark ? Colors.grey[600] : Colors.grey[400],
-                    borderRadius: BorderRadius.circular(4)),
+                color: accent.withOpacity(0.5),
               ),
             ),
-            const SizedBox(height: 20),
-            Text("Settings",
-                style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: textPrimary)),
+            const SizedBox(height: 16),
+
+            // Header
+            Row(
+              children: [
+                Container(width: 5, height: 22, color: accent),
+                const SizedBox(width: 10),
+                Text(
+                  'SETTINGS',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: accent,
+                    letterSpacing: 3,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 20),
 
-            _SectionHeader("Appearance", isDark: isDark),
+            // ── APPEARANCE ──────────────────────────────────────────────
+            _PixelSectionLabel('APPEARANCE', accent: accentCyan),
+            const SizedBox(height: 10),
             ValueListenableBuilder<ThemeMode>(
               valueListenable: themeModeNotifier,
               builder: (_, mode, __) {
                 final darkOn = mode == ThemeMode.dark;
-                return ListTile(
-                  leading: Icon(
-                    darkOn ? Icons.dark_mode : Icons.light_mode,
-                    color: Colors.purple,
-                  ),
-                  title: Text(
-                    darkOn ? "Dark Mode" : "Light Mode",
-                    style: TextStyle(
-                        fontWeight: FontWeight.w500, color: textPrimary),
-                  ),
-                  subtitle: Text(
-                    darkOn ? "Switch to light mode" : "Switch to dark mode",
-                    style: const TextStyle(color: Colors.grey),
-                  ),
+                return _PixelSettingsTile(
+                  icon: darkOn ? Icons.dark_mode : Icons.light_mode,
+                  title: darkOn ? 'DARK MODE' : 'LIGHT MODE',
+                  subtitle: darkOn ? 'Switch to light mode' : 'Switch to dark mode',
+                  accent: accent,
+                  cardColor: cardColor,
+                  borderColor: borderColor,
+                  textPrimary: textPrimary,
+                  textSecondary: textSecondary,
                   trailing: Switch(
                     value: darkOn,
-                    activeColor: Colors.purple,
+                    activeColor: accent,
+                    activeTrackColor: accent.withOpacity(0.4),
+                    inactiveThumbColor: borderColor,
+                    inactiveTrackColor: borderColor.withOpacity(0.3),
                     onChanged: (v) {
                       themeModeNotifier.value =
                           v ? ThemeMode.dark : ThemeMode.light;
-                      DBService.saveDarkMode(widget.userId, v); 
-                      setState(() {}); 
+                      DBService.saveDarkMode(widget.userId, v);
+                      setState(() {});
                     },
                   ),
                 );
               },
             ),
+            const SizedBox(height: 18),
 
-            _SectionHeader("Account", isDark: isDark),
-            ListTile(
-              leading: const Icon(Icons.lock_outline, color: Colors.purple),
-              title: Text("Change Password",
-                  style: TextStyle(
-                      fontWeight: FontWeight.w500, color: textPrimary)),
-              trailing:
-                  Icon(Icons.chevron_right, color: isDark ? Colors.grey[600] : Colors.grey[400]),
+            // ── ACCOUNT ─────────────────────────────────────────────────
+            _PixelSectionLabel('ACCOUNT', accent: accentCyan),
+            const SizedBox(height: 10),
+            _PixelSettingsTile(
+              icon: Icons.lock_outline,
+              title: 'CHANGE PASSWORD',
+              subtitle: 'Update your login credentials',
+              accent: accent,
+              cardColor: cardColor,
+              borderColor: borderColor,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+              trailing: Icon(Icons.chevron_right, color: borderColor, size: 18),
               onTap: _showChangePassword,
             ),
+            const SizedBox(height: 18),
 
-            _SectionHeader("Playback", isDark: isDark),
-            SwitchListTile(
-              secondary:
-                  const Icon(Icons.play_circle_outline, color: Colors.purple),
-              title: Text("Auto-play",
-                  style: TextStyle(color: textPrimary)),
-              subtitle: const Text("Continue playing similar songs",
-                  style: TextStyle(color: Colors.grey)),
-              value: _autoPlay,
-              activeColor: Colors.purple,
-              onChanged: (v) => setState(() => _autoPlay = v),
+            // ── PLAYBACK ─────────────────────────────────────────────────
+            _PixelSectionLabel('PLAYBACK', accent: accentCyan),
+            const SizedBox(height: 10),
+            _PixelSettingsTile(
+              icon: Icons.play_circle_outline,
+              title: 'AUTO-PLAY',
+              subtitle: 'Continue playing similar songs',
+              accent: accent,
+              cardColor: cardColor,
+              borderColor: borderColor,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+              trailing: Switch(
+                value: _autoPlay,
+                activeColor: accent,
+                activeTrackColor: accent.withOpacity(0.4),
+                inactiveThumbColor: borderColor,
+                inactiveTrackColor: borderColor.withOpacity(0.3),
+                onChanged: (v) => setState(() => _autoPlay = v),
+              ),
             ),
-            SwitchListTile(
-              secondary:
-                  const Icon(Icons.high_quality, color: Colors.purple),
-              title: Text("High Quality Streaming",
-                  style: TextStyle(color: textPrimary)),
-              subtitle: const Text("Uses more data",
-                  style: TextStyle(color: Colors.grey)),
-              value: _highQuality,
-              activeColor: Colors.purple,
-              onChanged: (v) => setState(() => _highQuality = v),
+            const SizedBox(height: 8),
+            _PixelSettingsTile(
+              icon: Icons.high_quality,
+              title: 'HIGH QUALITY STREAMING',
+              subtitle: 'Uses more data',
+              accent: accent,
+              cardColor: cardColor,
+              borderColor: borderColor,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+              trailing: Switch(
+                value: _highQuality,
+                activeColor: accent,
+                activeTrackColor: accent.withOpacity(0.4),
+                inactiveThumbColor: borderColor,
+                inactiveTrackColor: borderColor.withOpacity(0.3),
+                onChanged: (v) => setState(() => _highQuality = v),
+              ),
             ),
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            const SizedBox(height: 8),
+            // Crossfade row
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: cardColor,
+                border: Border.all(color: borderColor, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: accent.withOpacity(0.15),
+                    blurRadius: 0,
+                    offset: const Offset(3, 3),
+                  ),
+                ],
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.blur_on, color: Colors.purple),
-                      const SizedBox(width: 16),
+                      Icon(Icons.blur_on, color: accent, size: 18),
+                      const SizedBox(width: 12),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text("Crossfade",
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 16,
-                                  color: textPrimary)),
-                          Text("${_crossfade.toStringAsFixed(1)}s",
-                              style: const TextStyle(
-                                  color: Colors.grey, fontSize: 13)),
+                          Text(
+                            'CROSSFADE',
+                            style: TextStyle(
+                              color: textPrimary,
+                              fontFamily: 'monospace',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                          Text(
+                            '${_crossfade.toStringAsFixed(1)}s',
+                            style: TextStyle(
+                              color: textSecondary,
+                              fontFamily: 'monospace',
+                              fontSize: 10,
+                              letterSpacing: 1,
+                            ),
+                          ),
                         ],
                       ),
                     ],
                   ),
-                  Slider(
-                    value: _crossfade,
-                    max: 12.0,
-                    divisions: 24,
-                    activeColor: Colors.purple,
-                    label: "${_crossfade.toStringAsFixed(1)}s",
-                    onChanged: (v) => setState(() => _crossfade = v),
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: accent,
+                      inactiveTrackColor: borderColor.withOpacity(0.3),
+                      thumbColor: accent,
+                      overlayColor: accent.withOpacity(0.2),
+                      trackHeight: 3,
+                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                    ),
+                    child: Slider(
+                      value: _crossfade,
+                      max: 12.0,
+                      divisions: 24,
+                      label: '${_crossfade.toStringAsFixed(1)}s',
+                      onChanged: (v) => setState(() => _crossfade = v),
+                    ),
                   ),
                 ],
               ),
             ),
+            const SizedBox(height: 18),
 
-            _SectionHeader("Notifications", isDark: isDark),
-            SwitchListTile(
-              secondary:
-                  const Icon(Icons.notifications, color: Colors.purple),
-              title: Text("Push Notifications",
-                  style: TextStyle(color: textPrimary)),
-              subtitle: const Text("New uploads and activity",
-                  style: TextStyle(color: Colors.grey)),
-              value: _notifications,
-              activeColor: Colors.purple,
-              onChanged: (v) => setState(() => _notifications = v),
+            // ── NOTIFICATIONS ────────────────────────────────────────────
+            _PixelSectionLabel('NOTIFICATIONS', accent: accentCyan),
+            const SizedBox(height: 10),
+            _PixelSettingsTile(
+              icon: Icons.notifications,
+              title: 'PUSH NOTIFICATIONS',
+              subtitle: 'New uploads and activity',
+              accent: accent,
+              cardColor: cardColor,
+              borderColor: borderColor,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+              trailing: Switch(
+                value: _notifications,
+                activeColor: accent,
+                activeTrackColor: accent.withOpacity(0.4),
+                inactiveThumbColor: borderColor,
+                inactiveTrackColor: borderColor.withOpacity(0.3),
+                onChanged: (v) => setState(() => _notifications = v),
+              ),
             ),
+            const SizedBox(height: 18),
 
-            _SectionHeader("About", isDark: isDark),
-            ListTile(
-              leading:
-                  const Icon(Icons.info_outline, color: Colors.purple),
-              title: Text("Version",
-                  style: TextStyle(color: textPrimary)),
-              trailing:
-                  const Text("1.0.0", style: TextStyle(color: Colors.grey)),
+            // ── ABOUT ───────────────────────────────────────────────────
+            _PixelSectionLabel('ABOUT', accent: accentCyan),
+            const SizedBox(height: 10),
+            _PixelSettingsTile(
+              icon: Icons.info_outline,
+              title: 'VERSION',
+              subtitle: '1.0.0',
+              accent: accent,
+              cardColor: cardColor,
+              borderColor: borderColor,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+              trailing: null,
             ),
+            const SizedBox(height: 24),
 
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.purple,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12))),
-                onPressed: () => Navigator.pop(context),
-                child: const Text("Done",
-                    style: TextStyle(color: Colors.white)),
+            // Done button — pixel style
+            GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: accent,
+                  boxShadow: [
+                    BoxShadow(
+                      color: (isDark ? PixelColors.neonPurple : PixelColors.accentLavender)
+                          .withOpacity(0.8),
+                      blurRadius: 0,
+                      offset: const Offset(4, 4),
+                    ),
+                  ],
+                ),
+                child: const Center(
+                  child: Text(
+                    'DONE',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 4,
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -1075,21 +1481,113 @@ class _SettingsSheetState extends State<_SettingsSheet> {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  final bool isDark;
-  const _SectionHeader(this.title, {this.isDark = false});
+// ── Pixel section label (used in settings) ───────────────────────────────
+class _PixelSectionLabel extends StatelessWidget {
+  final String text;
+  final Color accent;
+  const _PixelSectionLabel(this.text, {required this.accent});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
-      child: Text(title,
+    return Row(
+      children: [
+        Container(width: 4, height: 18, color: accent),
+        const SizedBox(width: 8),
+        Text(
+          text,
           style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: isDark ? Colors.grey[400] : Colors.grey[500],
-              letterSpacing: 0.8)),
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+            color: accent,
+            letterSpacing: 2,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ],
     );
   }
 }
+
+// ── Pixel settings tile ───────────────────────────────────────────────────
+class _PixelSettingsTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final Color cardColor;
+  final Color borderColor;
+  final Color textPrimary;
+  final Color textSecondary;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  const _PixelSettingsTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.cardColor,
+    required this.borderColor,
+    required this.textPrimary,
+    required this.textSecondary,
+    this.trailing,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: cardColor,
+          border: Border.all(color: borderColor, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: accent.withOpacity(0.15),
+              blurRadius: 0,
+              offset: const Offset(3, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: accent, size: 18),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: textPrimary,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: textSecondary,
+                      fontFamily: 'monospace',
+                      fontSize: 10,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (trailing != null) trailing!,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// _PixelSectionLabel is defined inline in _SettingsSheetState build via _PixelSettingsTile above.

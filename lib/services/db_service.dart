@@ -81,11 +81,24 @@ class DBService {
     try {
       final res = await http.post(
         Uri.parse("$baseUrl/data.php?type=toggle_favorite"),
-        body: {"user_id": userId.toString(), "song_id": songId.toString()},
+        headers: {"Accept": "application/json"},
+        body: {
+          "user_id": userId.toString(),
+          "song_id": songId.toString(),
+        },
       );
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        return data['success'] == true;
+      print("toggleFavorite status: ${res.statusCode}");
+      print("toggleFavorite body: ${res.body}");
+      final body = res.body.trim();
+      if (res.statusCode == 200 && body.isNotEmpty) {
+        try {
+          final data = jsonDecode(body);
+          return data['success'] == true;
+        } catch (e) {
+          print("toggleFavorite JSON parse error: $e — raw: $body");
+          // If body is non-empty but not JSON, treat a 200 as success
+          return true;
+        }
       }
     } catch (e) {
       print("Favorite toggle error: $e");
@@ -94,19 +107,85 @@ class DBService {
   }
 
   static Future<List<dynamic>> getPlaylists(int userId) async {
-    final res = await http.get(
-      Uri.parse("$baseUrl/data.php?type=playlists&user_id=$userId"),
-    );
-    return res.statusCode == 200 ? jsonDecode(res.body) : [];
+    try {
+      final res = await http.get(
+        Uri.parse("$baseUrl/data.php?type=playlists&user_id=$userId"),
+      );
+      final body = res.body.trim();
+      if (res.statusCode == 200 && body.isNotEmpty) {
+        return jsonDecode(body);
+      }
+    } catch (e) {
+      print("Get playlists error: $e");
+    }
+    return [];
+  }
+
+  /// Create a new playlist for the user. Returns the new playlist id or null.
+  static Future<int?> createPlaylist({
+    required int userId,
+    required String name,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse("$baseUrl/data.php?type=create_playlist"),
+        body: {
+          "user_id": userId.toString(),
+          "name": name,
+        },
+      );
+      final body = res.body.trim();
+      if (res.statusCode == 200 && body.isNotEmpty) {
+        try {
+          final data = jsonDecode(body);
+          if (data['success'] == true) {
+            final raw = data['playlist_id'];
+            if (raw == null) return null;
+            return raw is int ? raw : int.tryParse(raw.toString());
+          }
+        } catch (e) {
+          print("Create playlist JSON parse error: $e — raw: $body");
+        }
+      } else {
+        print("Create playlist bad response: status=${res.statusCode} body='${res.body}'");
+      }
+    } catch (e) {
+      print("Create playlist error: $e");
+    }
+    return null;
+  }
+
+  /// Add a song to a playlist. Returns true on success.
+  static Future<bool> addSongToPlaylist({
+    required int playlistId,
+    required int songId,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse("$baseUrl/data.php?type=add_to_playlist"),
+        body: {
+          "playlist_id": playlistId.toString(),
+          "song_id": songId.toString(),
+        },
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      print("Add to playlist error: $e");
+    }
+    return false;
   }
 
   // --- PREFERENCES API ---
   static Future<bool> getDarkMode(int userId) async {
     try {
-      final res = await http.get(Uri.parse("$baseUrl/preferences.php?user_id=$userId"));
+      final res =
+          await http.get(Uri.parse("$baseUrl/preferences.php?user_id=$userId"));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        return data['dark_mode'] == 1; 
+        return data['dark_mode'] == 1;
       }
     } catch (e) {
       print("Pref error: $e");
@@ -120,15 +199,15 @@ class DBService {
         Uri.parse("$baseUrl/preferences.php"),
         body: {
           "user_id": userId.toString(),
-          "dark_mode": isDark ? "1" : "0", 
-        }
+          "dark_mode": isDark ? "1" : "0",
+        },
       );
     } catch (e) {
       print("Pref save error: $e");
     }
   }
 
-  // Changed to return a String error message instead of a boolean
+  /// Returns an error message string or null if successful.
   static Future<String?> uploadSong({
     required String title,
     required String artistName,
@@ -150,19 +229,19 @@ class DBService {
       request.files.add(
         http.MultipartFile.fromBytes('image', imageBytes, filename: imageName),
       );
-      
+
       var streamedResponse = await request.send();
       var response = await http.Response.fromStream(streamedResponse);
-      
+
       if (response.statusCode == 200) {
         try {
           final decoded = jsonDecode(response.body);
           if (decoded['success'] == true) {
-            return null; // Return null on success
+            return null;
           } else {
-            return decoded['error'] ?? "Unknown server error"; 
+            return decoded['error'] ?? "Unknown server error";
           }
-        } catch(e) {
+        } catch (e) {
           return "JSON Decode error: ${response.body}";
         }
       } else {

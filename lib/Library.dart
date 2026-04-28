@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'pixel_colors.dart';
 import 'services/db_service.dart';
 
 class LibraryPage extends StatelessWidget {
@@ -10,7 +11,7 @@ class LibraryPage extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = Theme.of(context).scaffoldBackgroundColor;
     final textPrimary = isDark ? Colors.white : Colors.black87;
-    final cardColor = isDark ? const Color(0xFF2A2A3E) : Colors.white;
+    final cardColor = isDark ? PixelColors.darkCard : PixelColors.lightCard;
 
     return Scaffold(
       backgroundColor: bgColor,
@@ -50,11 +51,10 @@ class LibraryPage extends StatelessWidget {
                         return Card(
                           color: cardColor,
                           margin: const EdgeInsets.only(bottom: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                          shape: const RoundedRectangleBorder(),
                           child: ListTile(
-                            leading: const Icon(Icons.playlist_play,
-                                size: 40, color: Colors.purple),
+                            leading: Icon(Icons.playlist_play,
+                                size: 40, color: isDark ? PixelColors.neonCyan : PixelColors.accentMint),
                             title: Text(playlists[index]['name'],
                                 style: TextStyle(
                                     fontWeight: FontWeight.bold,
