@@ -7,7 +7,7 @@ import 'widgets/shared_sheets.dart';
 
 class LibraryPage extends StatefulWidget {
   final int userId;
-  final Function(Song)? onOpenPlayer;
+  final void Function(Song, {List<Song>? queueSongs, bool shuffle})? onOpenPlayer;
 
   const LibraryPage({
     super.key,
@@ -528,7 +528,7 @@ class PlaylistDetailPage extends StatefulWidget {
   final String playlistName;
   final bool isFavorites;
   final int userId;
-  final Function(Song)? onOpenPlayer;
+  final void Function(Song, {List<Song>? queueSongs, bool shuffle})? onOpenPlayer;
   final VoidCallback? onPlaylistChanged;
 
   const PlaylistDetailPage({
@@ -574,16 +574,8 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
 
   void _playPlaylist({bool shuffle = false}) {
     if (_songs.isEmpty) return;
-    final songsToPlay = List<Song>.from(_songs);
-    if (shuffle) {
-      songsToPlay.shuffle();
-    }
-    AudioManager.instance.setQueue(songsToPlay);
-    if (shuffle) {
-      AudioManager.instance.toggleShuffle(true);
-    }
-    if (widget.onOpenPlayer != null && songsToPlay.isNotEmpty) {
-      widget.onOpenPlayer!(songsToPlay.first);
+    if (widget.onOpenPlayer != null && _songs.isNotEmpty) {
+      widget.onOpenPlayer!(_songs.first, queueSongs: _songs, shuffle: shuffle);
     }
   }
 
@@ -827,7 +819,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
                                         icon: Icon(Icons.play_arrow,
                                             color: accent, size: 22),
                                         onPressed: () =>
-                                            widget.onOpenPlayer!(song),
+                                            widget.onOpenPlayer!(song, queueSongs: _songs),
                                       ),
                                     if (!widget.isFavorites)
                                       IconButton(

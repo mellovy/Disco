@@ -726,9 +726,13 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
     final border = isDark ? PixelColors.darkBorder : PixelColors.lightBorder;
     final textPrimary = isDark ? Colors.white : PixelColors.darkBg;
 
-    final queuedSongs =
-        _queue.where((s) => s.id != _currentPlayingSong?.id).toList();
-    final hasQueue = queuedSongs.isNotEmpty;
+    final currentIdx = AudioManager.instance.currentIndex ?? -1;
+
+    final previousSongs =
+        (currentIdx > 0) ? _queue.sublist(0, currentIdx) : <Song>[];
+    final nextSongs = (currentIdx >= 0 && currentIdx + 1 < _queue.length)
+        ? _queue.sublist(currentIdx + 1)
+        : <Song>[];
 
     return Container(
       decoration: BoxDecoration(
@@ -753,7 +757,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                         letterSpacing: 2,
                         fontFamily: 'monospace')),
                 const Spacer(),
-                if (hasQueue)
+                if (_queue.isNotEmpty)
                   GestureDetector(
                     onTap: () async {
                       await AudioManager.instance.clearQueue();
@@ -763,7 +767,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
+                        color: Colors.red.withValues(alpha: 0.1),
                         border: Border.all(color: Colors.red, width: 1),
                       ),
                       child: const Text('CLEAR ALL',
@@ -801,16 +805,101 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 16, vertical: 8),
                 children: [
-                  // Now playing card
+                  // ── PLAYED ────────────────────────────────────────────
+                  if (previousSongs.isNotEmpty) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 8),
+                      child: Text('PLAYED',
+                          style: TextStyle(
+                              color: border,
+                              fontSize: 10,
+                              letterSpacing: 2,
+                              fontFamily: 'monospace')),
+                    ),
+                    ...previousSongs.asMap().entries.map((e) {
+                      final index = e.key;
+                      final song = e.value;
+                      final actualIndex = index;
+                      return Container(
+                        key: ValueKey('played_${song.id}_$index'),
+                        margin: const EdgeInsets.only(bottom: 6),
+                        decoration: BoxDecoration(
+                          color: cardColor.withValues(alpha: 0.6),
+                          border: Border.all(color: border, width: 2),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
+                          leading: song.imageUrl != null
+                              ? Image.network(song.imageUrl!,
+                                  width: 44,
+                                  height: 44,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (c, _, __) =>
+                                      _thumb(accent, size: 44))
+                              : _thumb(accent, size: 44),
+                          title: Text(song.title,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: textPrimary.withValues(alpha: 0.6),
+                                  fontSize: 12,
+                                  fontFamily: 'monospace'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                          subtitle: Text(song.artist ?? '',
+                              style: TextStyle(
+                                  color: border,
+                                  fontSize: 10,
+                                  fontFamily: 'monospace'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Restore to queue (move to end)
+                              IconButton(
+                                icon: Icon(Icons.replay,
+                                    color: accent, size: 18),
+                                tooltip: 'Restore to queue',
+                                onPressed: () async {
+                                  await AudioManager.instance.reorderQueue(
+                                      actualIndex, _queue.length);
+                                  _refreshQueue();
+                                },
+                              ),
+                              // Remove
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded,
+                                    size: 18),
+                                color: Colors.red.withValues(alpha: 0.7),
+                                onPressed: () async {
+                                  await AudioManager.instance
+                                      .removeFromQueue(actualIndex);
+                                  _refreshQueue();
+                                },
+                              ),
+                            ],
+                          ),
+                          onTap: () {
+                            AudioManager.instance.seekToIndex(actualIndex);
+                            widget.onSongSelected(song);
+                          },
+                        ),
+                      );
+                    }),
+                    const SizedBox(height: 10),
+                  ],
+
+                  // ── NOW PLAYING ───────────────────────────────────────
                   if (_currentPlayingSong != null)
                     Container(
                       margin: const EdgeInsets.only(bottom: 14),
                       decoration: BoxDecoration(
-                        color: accent.withOpacity(0.08),
+                        color: accent.withValues(alpha: 0.08),
                         border: Border.all(color: accent, width: 2),
                         boxShadow: [
                           BoxShadow(
-                              color: accent.withOpacity(0.2),
+                              color: accent.withValues(alpha: 0.2),
                               blurRadius: 0,
                               offset: const Offset(3, 3))
                         ],
@@ -834,7 +923,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                             Container(
                               width: 50,
                               height: 50,
-                              color: accent.withOpacity(0.65),
+                              color: accent.withValues(alpha: 0.65),
                               child: const Icon(Icons.play_arrow_rounded,
                                   color: Colors.white, size: 28),
                             ),
@@ -855,7 +944,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                         subtitle: Text(
                           _currentPlayingSong!.artist ?? '',
                           style: TextStyle(
-                              color: accent.withOpacity(0.7),
+                              color: accent.withValues(alpha: 0.7),
                               fontSize: 10,
                               fontFamily: 'monospace'),
                         ),
@@ -864,7 +953,8 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                       ),
                     ),
 
-                  if (hasQueue) ...[
+                  // ── NEXT UP ───────────────────────────────────────────
+                  if (nextSongs.isNotEmpty) ...[
                     Padding(
                       padding: const EdgeInsets.only(left: 4, bottom: 8),
                       child: Text('NEXT UP',
@@ -878,29 +968,25 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       onReorder: (oldIndex, newIndex) async {
-                        int actualOld = oldIndex;
-                        int actualNew = newIndex;
-                        if (_currentPlayingSong != null) {
-                          actualOld = oldIndex + 1;
-                          actualNew = newIndex + 1;
-                        }
+                        // Map "next up" indices to full queue indices
+                        final actualOld = currentIdx + 1 + oldIndex;
+                        var actualNew = currentIdx + 1 + newIndex;
+                        // ReorderableListView reports newIndex as if item was
+                        // already removed; reorderQueue expects the same.
                         await AudioManager.instance
                             .reorderQueue(actualOld, actualNew);
                         _refreshQueue();
                       },
-                      itemCount: queuedSongs.length,
+                      itemCount: nextSongs.length,
                       itemBuilder: (context, index) {
-                        final song = queuedSongs[index];
-                        final actualIndex = _currentPlayingSong != null
-                            ? index + 1
-                            : index;
+                        final song = nextSongs[index];
+                        final actualIndex = currentIdx + 1 + index;
                         return Container(
-                          key: ValueKey('${song.id}_$index'),
+                          key: ValueKey('next_${song.id}_$index'),
                           margin: const EdgeInsets.only(bottom: 6),
                           decoration: BoxDecoration(
                             color: cardColor,
-                            border:
-                                Border.all(color: border, width: 2),
+                            border: Border.all(color: border, width: 2),
                           ),
                           child: ListTile(
                             contentPadding: const EdgeInsets.symmetric(
@@ -910,7 +996,7 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                                     width: 44,
                                     height: 44,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (c, e, s) =>
+                                    errorBuilder: (c, _, __) =>
                                         _thumb(accent, size: 44))
                                 : _thumb(accent, size: 44),
                             title: Text(song.title,
@@ -921,24 +1007,32 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                                     fontFamily: 'monospace'),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis),
-                            subtitle: Text(
-                                song.artist ?? '',
+                            subtitle: Text(song.artist ?? '',
                                 style: TextStyle(
                                     color: border,
                                     fontSize: 10,
                                     fontFamily: 'monospace'),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.close_rounded,
-                                  size: 18),
-                              color: Colors.red.withOpacity(0.7),
-                              onPressed: () async {
-                                await AudioManager.instance
-                                    .removeFromQueue(actualIndex);
-                                _refreshQueue();
-                              },
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.close_rounded,
+                                      size: 18),
+                                  color: Colors.red.withValues(alpha: 0.7),
+                                  onPressed: () async {
+                                    await AudioManager.instance
+                                        .removeFromQueue(actualIndex);
+                                    _refreshQueue();
+                                  },
+                                ),
+                              ],
                             ),
+                            onTap: () {
+                              AudioManager.instance.seekToIndex(actualIndex);
+                              widget.onSongSelected(song);
+                            },
                           ),
                         );
                       },
@@ -955,15 +1049,15 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
               padding: const EdgeInsets.symmetric(
                   horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: accent.withOpacity(0.08),
-                border: Border.all(color: accent.withOpacity(0.3), width: 1),
+                color: accent.withValues(alpha: 0.08),
+                border: Border.all(color: accent.withValues(alpha: 0.3), width: 1),
               ),
               child: Row(
                 children: [
                   Icon(Icons.playlist_play, color: accent, size: 18),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text('${_queue.length} SONGS IN QUEUE',
+                    child: Text('${_queue.length} SONGS',
                         style: TextStyle(
                             color: accent,
                             fontSize: 11,
@@ -971,18 +1065,34 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1)),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
-                    color: accent,
-                    child: Text('${queuedSongs.length} NEXT',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            fontFamily: 'monospace',
-                            letterSpacing: 1)),
-                  ),
+                  if (previousSongs.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      color: border,
+                      child: Text('${previousSongs.length} PLAYED',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              fontFamily: 'monospace',
+                              letterSpacing: 1)),
+                    ),
+                  if (previousSongs.isNotEmpty)
+                    const SizedBox(width: 6),
+                  if (nextSongs.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      color: accent,
+                      child: Text('${nextSongs.length} NEXT',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              fontFamily: 'monospace',
+                              letterSpacing: 1)),
+                    ),
                 ],
               ),
             ),
@@ -996,9 +1106,8 @@ class _QueueBottomSheetState extends State<QueueBottomSheet> {
     return Container(
       width: size,
       height: size,
-      color: accent.withOpacity(0.1),
-      child:
-          Icon(Icons.music_note, color: accent, size: size * 0.5),
+      color: accent.withValues(alpha: 0.1),
+      child: Icon(Icons.music_note, color: accent, size: size * 0.5),
     );
   }
 }

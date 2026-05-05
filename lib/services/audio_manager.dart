@@ -55,9 +55,10 @@ class AudioManager {
     final state = _player.sequenceState;
     if (state == null) return;
 
-    // Use effectiveSequence when shuffled so UI reflects actual play order
-    final sequence =
-        _player.shuffleModeEnabled ? state.effectiveSequence : state.sequence;
+    // Always use original sequence so currentIndex maps directly to _currentQueue.
+    // toggleShuffle() physically reorders children, so sequence already reflects
+    // the playback order after shuffle/unshuffle.
+    final sequence = state.sequence;
 
     final newQueue = <Song>[];
     for (var source in sequence) {
@@ -300,6 +301,14 @@ class AudioManager {
           Duration(milliseconds: (fraction * dur.inMilliseconds).round());
       await _player.seek(target);
     }
+  }
+
+  /// Jump to a specific index in the current queue.
+  Future<void> seekToIndex(int index) async {
+    if (_playlist == null ||
+        index < 0 ||
+        index >= _playlist!.length) return;
+    await _player.seek(Duration.zero, index: index);
   }
 
   Future<void> dispose() async {

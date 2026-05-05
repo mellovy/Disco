@@ -133,27 +133,27 @@ class _AppShellState extends State<AppShell> {
 
   // ── Player logic ──────────────────────────────────────────────────────────
 
-  /// Opens the player for [song]. If we have a cached song list, load the
-  /// full list as the queue starting at this song so next/prev/shuffle works.
-  void _openPlayer(Song song) {
+  /// Opens the player for [song].
+  /// If [queueSongs] is provided, loads that list as the queue.
+  /// [shuffle] will shuffle the queue while keeping the current song fixed.
+  /// Otherwise plays only the single song.
+  void _openPlayer(Song song, {List<Song>? queueSongs, bool shuffle = false}) {
     setState(() {
       _currentSong = song;
       _playerMaximized = true;
     });
 
-    final songs = _cachedSongs;
-    if (songs.isNotEmpty) {
-      // Find the index of the tapped song; fall back to 0 if not found.
-      final idx = songs.indexWhere((s) => s.id == song.id);
+    if (queueSongs != null && queueSongs.isNotEmpty) {
+      final idx = queueSongs.indexWhere((s) => s.id == song.id);
       final startIndex = idx >= 0 ? idx : 0;
-
-      // Only reload the queue if the song changed or there's no active queue.
       if (AudioManager.instance.currentPlayingId != song.id ||
-          AudioManager.instance.currentQueue.length <= 1) {
-        AudioManager.instance.setQueue(songs, startIndex: startIndex);
+          AudioManager.instance.currentQueue.length != queueSongs.length) {
+        AudioManager.instance.setQueue(queueSongs, startIndex: startIndex);
+      }
+      if (shuffle) {
+        AudioManager.instance.toggleShuffle(true);
       }
     } else {
-      // Fallback: just play this one song if list hasn't loaded yet.
       if (AudioManager.instance.currentPlayingId != song.id) {
         AudioManager.instance.setSong(song);
       }
