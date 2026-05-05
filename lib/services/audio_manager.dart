@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:just_audio/just_audio.dart';
 import '../models/song.dart';
 
@@ -12,9 +13,12 @@ class AudioManager {
       } else if (state?.currentSource == null) {
         _currentPlayingId = -1;
         _currentQueue.clear();
-        _queueStreamController.add(_currentQueue);
+        _originalOrder.clear();
+        _queueStreamController.add(List.unmodifiable(_currentQueue));
       }
     });
+
+    _player.currentIndexStream.listen((_) => _updateQueueFromPlayer());
   }
 
   static final AudioManager instance = AudioManager._internal();
@@ -26,8 +30,10 @@ class AudioManager {
   int _currentPlayingId = -1;
 
   List<Song> _currentQueue = [];
+  List<Song> _originalOrder = []; // Original order before shuffle
 
   int get currentPlayingId => _currentPlayingId;
+  int? get currentIndex => _player.currentIndex;
 
   List<Song> get currentQueue => List.unmodifiable(_currentQueue);
 
@@ -46,17 +52,21 @@ class AudioManager {
       });
 
   void _updateQueueFromPlayer() {
-    final sequence = _player.sequenceState?.sequence;
-    if (sequence != null) {
-      final newQueue = <Song>[];
-      for (var source in sequence) {
-        if (source.tag is Song) {
-          newQueue.add(source.tag as Song);
-        }
+    final state = _player.sequenceState;
+    if (state == null) return;
+
+    // Use effectiveSequence when shuffled so UI reflects actual play order
+    final sequence =
+        _player.shuffleModeEnabled ? state.effectiveSequence : state.sequence;
+
+    final newQueue = <Song>[];
+    for (var source in sequence) {
+      if (source.tag is Song) {
+        newQueue.add(source.tag as Song);
       }
-      _currentQueue = newQueue;
-      _queueStreamController.add(_currentQueue);
     }
+    _currentQueue = newQueue;
+    _queueStreamController.add(List.unmodifiable(_currentQueue));
   }
 
   /// Play a single song, clearing any existing queue.
@@ -67,6 +77,7 @@ class AudioManager {
 
     final source = AudioSource.uri(Uri.parse(url), tag: song);
     _playlist = ConcatenatingAudioSource(children: [source]);
+    _originalOrder = [song];
 
     try {
       await _player.setShuffleModeEnabled(false);
@@ -81,7 +92,6 @@ class AudioManager {
   }
 
   /// Load an entire list of songs as the queue, starting playback at [startIndex].
-  /// This is the correct way to enable next/prev and shuffle across all songs.
   Future<void> setQueue(List<Song> songs, {int startIndex = 0}) async {
     if (songs.isEmpty) return;
 
@@ -94,10 +104,12 @@ class AudioManager {
 
     final clampedIndex = startIndex.clamp(0, sources.length - 1);
     _playlist = ConcatenatingAudioSource(children: sources);
+    _originalOrder = List.from(songs);
 
     try {
       await _player.setShuffleModeEnabled(false);
-      await _player.setAudioSource(_playlist!, initialIndex: clampedIndex, preload: true);
+      await _player.setAudioSource(_playlist!,
+          initialIndex: clampedIndex, preload: true);
       _currentPlayingId = songs[clampedIndex].id;
       await _player.play();
       _updateQueueFromPlayer();
@@ -116,6 +128,7 @@ class AudioManager {
 
     if (_playlist == null) {
       _playlist = ConcatenatingAudioSource(children: [source]);
+      _originalOrder = [song];
       _currentPlayingId = song.id;
       try {
         await _player.setAudioSource(_playlist!);
@@ -126,6 +139,7 @@ class AudioManager {
       }
     } else {
       await _playlist!.add(source);
+      _originalOrder.add(song);
       if (!_player.playing &&
           _player.processingState == ProcessingState.completed) {
         await _player.seekToNext();
@@ -142,39 +156,113 @@ class AudioManager {
   }
 
   Future<void> removeFromQueue(int index) async {
-    if (_playlist != null && index < _playlist!.length) {
-      final removedSource = _playlist!.sequence[index];
-      await _playlist!.removeAt(index);
+    if (_playlist == null ||
+        index < 0 ||
+        index >= _playlist!.length) return;
 
-      if (removedSource.tag is Song &&
-          (removedSource.tag as Song).id == currentPlayingId) {
-        await _player.stop();
-        _currentPlayingId = -1;
-      }
-
-      _updateQueueFromPlayer();
-      _queueStreamController.add(_currentQueue);
+    final isCurrent = index == _player.currentIndex;
+    await _playlist!.removeAt(index);
+    if (index < _originalOrder.length) {
+      _originalOrder.removeAt(index);
     }
+
+    if (isCurrent) {
+      _currentPlayingId = -1;
+    }
+
+    _updateQueueFromPlayer();
   }
 
   Future<void> reorderQueue(int oldIndex, int newIndex) async {
     if (_playlist == null) return;
+    if (oldIndex < 0 || oldIndex >= _playlist!.length) return;
+    if (newIndex < 0 || newIndex > _playlist!.length) return;
+    if (oldIndex == newIndex) return;
     if (oldIndex < newIndex) newIndex -= 1;
 
     final source = _playlist!.sequence[oldIndex];
     await _playlist!.removeAt(oldIndex);
     await _playlist!.insert(newIndex, source);
 
+    // Keep original order in sync
+    if (oldIndex < _originalOrder.length && newIndex <= _originalOrder.length) {
+      final song = _originalOrder.removeAt(oldIndex);
+      _originalOrder.insert(newIndex, song);
+    }
+
     _updateQueueFromPlayer();
-    _queueStreamController.add(_currentQueue);
   }
 
   Future<void> clearQueue() async {
     if (_playlist != null) {
       await _playlist!.clear();
       _currentQueue.clear();
-      _queueStreamController.add(_currentQueue);
+      _originalOrder.clear();
+      _queueStreamController.add(List.unmodifiable(_currentQueue));
     }
+  }
+
+  /// Toggle shuffle on/off. When enabled, shuffles the queue while keeping
+  /// the current song in place. When disabled, restores original order.
+  Future<void> toggleShuffle(bool enable) async {
+    if (_playlist == null || _currentQueue.length <= 1) return;
+
+    final currentIdx = _player.currentIndex ?? 0;
+    final currentSong = _currentQueue[currentIdx.clamp(0, _currentQueue.length - 1)];
+
+    if (enable) {
+      // Save original order if not already saved
+      if (_originalOrder.isEmpty) {
+        _originalOrder = List.from(_currentQueue);
+      }
+
+      // Shuffle everything except the current song
+      final others = _currentQueue
+          .asMap()
+          .entries
+          .where((e) => e.key != currentIdx)
+          .map((e) => e.value)
+          .toList();
+      others.shuffle(Random());
+
+      // Build new order: current song first, then shuffled rest
+      final newOrder = [currentSong, ...others];
+
+      final sources = newOrder
+          .where((s) => s.audioUrl != null && s.audioUrl!.isNotEmpty)
+          .map((s) => AudioSource.uri(Uri.parse(s.audioUrl!), tag: s))
+          .toList();
+
+      final wasPlaying = _player.playing;
+      await _player.stop();
+
+      _playlist = ConcatenatingAudioSource(children: sources);
+      await _player.setAudioSource(_playlist!, initialIndex: 0, preload: true);
+
+      if (wasPlaying) await _player.play();
+    } else {
+      // Restore original order
+      if (_originalOrder.isEmpty) return;
+
+      final startIndex = _originalOrder.indexWhere((s) => s.id == currentSong.id);
+      final clampedStart = startIndex >= 0 ? startIndex : 0;
+
+      final sources = _originalOrder
+          .where((s) => s.audioUrl != null && s.audioUrl!.isNotEmpty)
+          .map((s) => AudioSource.uri(Uri.parse(s.audioUrl!), tag: s))
+          .toList();
+
+      final wasPlaying = _player.playing;
+      await _player.stop();
+
+      _playlist = ConcatenatingAudioSource(children: sources);
+      await _player.setAudioSource(_playlist!,
+          initialIndex: clampedStart, preload: true);
+
+      if (wasPlaying) await _player.play();
+    }
+
+    _updateQueueFromPlayer();
   }
 
   Stream<double> get positionFractionStream async* {
@@ -201,7 +289,8 @@ class AudioManager {
     if (_playlist != null) await _playlist!.clear();
     _currentPlayingId = -1;
     _currentQueue.clear();
-    _queueStreamController.add(_currentQueue);
+    _originalOrder.clear();
+    _queueStreamController.add(List.unmodifiable(_currentQueue));
   }
 
   Future<void> seekFraction(double fraction) async {

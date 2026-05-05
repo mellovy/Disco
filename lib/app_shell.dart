@@ -269,7 +269,10 @@ class _AppShellState extends State<AppShell> {
         avatarImageBytes: _avatarImageBytes,
         userId: widget.userId,
       ),
-      LibraryPage(userId: widget.userId),
+      LibraryPage(
+        userId: widget.userId,
+        onOpenPlayer: _openPlayer,
+      ),
       const UploadSongPage(),
     ];
 

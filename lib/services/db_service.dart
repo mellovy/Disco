@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -106,6 +107,10 @@ class DBService {
     return false;
   }
 
+  static final _playlistRefreshController = StreamController<void>.broadcast();
+  static Stream<void> get playlistRefreshStream => _playlistRefreshController.stream;
+  static void notifyPlaylistRefresh() => _playlistRefreshController.add(null);
+
   static Future<List<dynamic>> getPlaylists(int userId) async {
     try {
       final res = await http.get(
@@ -176,6 +181,83 @@ class DBService {
       print("Add to playlist error: $e");
     }
     return false;
+  }
+
+  /// Get all songs in a playlist.
+  static Future<List<Song>> getPlaylistSongs(int playlistId) async {
+    try {
+      final res = await http.get(
+        Uri.parse("$baseUrl/data.php?type=get_playlist_songs&playlist_id=$playlistId"),
+      );
+      final body = res.body.trim();
+      if (res.statusCode == 200 && body.isNotEmpty) {
+        List data = jsonDecode(body);
+        return data.map((s) {
+          int id = int.parse(s['song_id'].toString());
+          return Song(
+            id: id,
+            title: s['title'] ?? 'Untitled',
+            artist: s['artist_name'] ?? 'Unknown Artist',
+            audioUrl: "$baseUrl/get_file.php?id=$id&field=audio_url",
+            imageUrl: "$baseUrl/get_file.php?id=$id&field=cover_image",
+            isFavorite: false,
+          );
+        }).toList();
+      }
+    } catch (e) {
+      print("Get playlist songs error: $e");
+    }
+    return [];
+  }
+
+  /// Remove a song from a playlist.
+  static Future<bool> removeSongFromPlaylist({
+    required int playlistId,
+    required int songId,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse("$baseUrl/data.php?type=remove_from_playlist"),
+        body: {
+          "playlist_id": playlistId.toString(),
+          "song_id": songId.toString(),
+        },
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      print("Remove from playlist error: $e");
+    }
+    return false;
+  }
+
+  /// Get all favorite songs for a user (from the Favorites playlist).
+  static Future<List<Song>> getFavoritesAsSongs(int userId) async {
+    try {
+      final res = await http.get(
+        Uri.parse("$baseUrl/data.php?type=get_favorites&user_id=$userId"),
+      );
+      final body = res.body.trim();
+      if (res.statusCode == 200 && body.isNotEmpty) {
+        List data = jsonDecode(body);
+        return data.map((s) {
+          int id = int.parse(s['song_id'].toString());
+          return Song(
+            id: id,
+            title: s['title'] ?? 'Untitled',
+            artist: s['artist_name'] ?? 'Unknown Artist',
+            audioUrl: "$baseUrl/get_file.php?id=$id&field=audio_url",
+            imageUrl: "$baseUrl/get_file.php?id=$id&field=cover_image",
+            isFavorite: true,
+          );
+        }).toList();
+      }
+    } catch (e) {
+      print("Get favorites error: $e");
+    }
+    return [];
   }
 
   // --- PREFERENCES API ---
@@ -250,5 +332,24 @@ class DBService {
     } catch (e) {
       return "Upload exception: $e";
     }
+  }
+
+  /// Delete a playlist by id.
+  static Future<bool> deletePlaylist(int playlistId) async {
+    try {
+      final res = await http.post(
+        Uri.parse("$baseUrl/data.php?type=delete_playlist"),
+        body: {
+          "playlist_id": playlistId.toString(),
+        },
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        return data['success'] == true;
+      }
+    } catch (e) {
+      print("Delete playlist error: $e");
+    }
+    return false;
   }
 }
