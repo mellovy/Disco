@@ -13,6 +13,7 @@ import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import 'main.dart' show themeModeNotifier;
 import 'pixel_colors.dart';
+import 'widgets/shared_sheets.dart';
 import 'services/db_service.dart';
 import 'services/audio_manager.dart';
 
@@ -1039,11 +1040,6 @@ class _SettingsSheet extends StatefulWidget {
 }
 
 class _SettingsSheetState extends State<_SettingsSheet> {
-  bool _notifications = true;
-  bool _autoPlay = false;
-  bool _highQuality = true;
-  double _crossfade = 0.0;
-
   void _showChangePassword() {
     final currentCtrl = TextEditingController();
     final newCtrl = TextEditingController();
@@ -1246,7 +1242,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             const SizedBox(height: 20),
 
             // ── APPEARANCE ──────────────────────────────────────────────
-            _PixelSectionLabel('APPEARANCE', accent: accentCyan),
+            PixelSectionLabel('APPEARANCE', accent: accentCyan),
             const SizedBox(height: 10),
             ValueListenableBuilder<ThemeMode>(
               valueListenable: themeModeNotifier,
@@ -1280,7 +1276,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             const SizedBox(height: 18),
 
             // ── ACCOUNT ─────────────────────────────────────────────────
-            _PixelSectionLabel('ACCOUNT', accent: accentCyan),
+            PixelSectionLabel('ACCOUNT', accent: accentCyan),
             const SizedBox(height: 10),
             _PixelSettingsTile(
               icon: Icons.lock_outline,
@@ -1296,142 +1292,8 @@ class _SettingsSheetState extends State<_SettingsSheet> {
             ),
             const SizedBox(height: 18),
 
-            // ── PLAYBACK ─────────────────────────────────────────────────
-            _PixelSectionLabel('PLAYBACK', accent: accentCyan),
-            const SizedBox(height: 10),
-            _PixelSettingsTile(
-              icon: Icons.play_circle_outline,
-              title: 'AUTO-PLAY',
-              subtitle: 'Continue playing similar songs',
-              accent: accent,
-              cardColor: cardColor,
-              borderColor: borderColor,
-              textPrimary: textPrimary,
-              textSecondary: textSecondary,
-              trailing: Switch(
-                value: _autoPlay,
-                activeColor: accent,
-                activeTrackColor: accent.withOpacity(0.4),
-                inactiveThumbColor: borderColor,
-                inactiveTrackColor: borderColor.withOpacity(0.3),
-                onChanged: (v) => setState(() => _autoPlay = v),
-              ),
-            ),
-            const SizedBox(height: 8),
-            _PixelSettingsTile(
-              icon: Icons.high_quality,
-              title: 'HIGH QUALITY STREAMING',
-              subtitle: 'Uses more data',
-              accent: accent,
-              cardColor: cardColor,
-              borderColor: borderColor,
-              textPrimary: textPrimary,
-              textSecondary: textSecondary,
-              trailing: Switch(
-                value: _highQuality,
-                activeColor: accent,
-                activeTrackColor: accent.withOpacity(0.4),
-                inactiveThumbColor: borderColor,
-                inactiveTrackColor: borderColor.withOpacity(0.3),
-                onChanged: (v) => setState(() => _highQuality = v),
-              ),
-            ),
-            const SizedBox(height: 8),
-            // Crossfade row
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: cardColor,
-                border: Border.all(color: borderColor, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withOpacity(0.15),
-                    blurRadius: 0,
-                    offset: const Offset(3, 3),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.blur_on, color: accent, size: 18),
-                      const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'CROSSFADE',
-                            style: TextStyle(
-                              color: textPrimary,
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                          Text(
-                            '${_crossfade.toStringAsFixed(1)}s',
-                            style: TextStyle(
-                              color: textSecondary,
-                              fontFamily: 'monospace',
-                              fontSize: 10,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  SliderTheme(
-                    data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: accent,
-                      inactiveTrackColor: borderColor.withOpacity(0.3),
-                      thumbColor: accent,
-                      overlayColor: accent.withOpacity(0.2),
-                      trackHeight: 3,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-                    ),
-                    child: Slider(
-                      value: _crossfade,
-                      max: 12.0,
-                      divisions: 24,
-                      label: '${_crossfade.toStringAsFixed(1)}s',
-                      onChanged: (v) => setState(() => _crossfade = v),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-
-            // ── NOTIFICATIONS ────────────────────────────────────────────
-            _PixelSectionLabel('NOTIFICATIONS', accent: accentCyan),
-            const SizedBox(height: 10),
-            _PixelSettingsTile(
-              icon: Icons.notifications,
-              title: 'PUSH NOTIFICATIONS',
-              subtitle: 'New uploads and activity',
-              accent: accent,
-              cardColor: cardColor,
-              borderColor: borderColor,
-              textPrimary: textPrimary,
-              textSecondary: textSecondary,
-              trailing: Switch(
-                value: _notifications,
-                activeColor: accent,
-                activeTrackColor: accent.withOpacity(0.4),
-                inactiveThumbColor: borderColor,
-                inactiveTrackColor: borderColor.withOpacity(0.3),
-                onChanged: (v) => setState(() => _notifications = v),
-              ),
-            ),
-            const SizedBox(height: 18),
-
             // ── ABOUT ───────────────────────────────────────────────────
-            _PixelSectionLabel('ABOUT', accent: accentCyan),
+            PixelSectionLabel('ABOUT', accent: accentCyan),
             const SizedBox(height: 10),
             _PixelSettingsTile(
               icon: Icons.info_outline,
@@ -1480,33 +1342,6 @@ class _SettingsSheetState extends State<_SettingsSheet> {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ── Pixel section label (used in settings) ───────────────────────────────
-class _PixelSectionLabel extends StatelessWidget {
-  final String text;
-  final Color accent;
-  const _PixelSectionLabel(this.text, {required this.accent});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(width: 4, height: 18, color: accent),
-        const SizedBox(width: 8),
-        Text(
-          text,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            color: accent,
-            letterSpacing: 2,
-            fontFamily: 'monospace',
-          ),
-        ),
-      ],
     );
   }
 }
@@ -1592,5 +1427,3 @@ class _PixelSettingsTile extends StatelessWidget {
     );
   }
 }
-
-// _PixelSectionLabel is defined inline in _SettingsSheetState build via _PixelSettingsTile above.

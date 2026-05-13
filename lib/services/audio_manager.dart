@@ -266,19 +266,13 @@ class AudioManager {
     _updateQueueFromPlayer();
   }
 
-  Stream<double> get positionFractionStream async* {
-    await for (final pos in _player.positionStream) {
-      final dur = _player.duration;
-      if (dur != null && dur.inMilliseconds > 0) {
-        yield (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0);
-      } else {
-        yield 0.0;
-      }
-    }
+  /// Jump to a specific index in the current queue.
+  Future<void> seekToIndex(int index) async {
+    if (_playlist == null ||
+        index < 0 ||
+        index >= _playlist!.length) return;
+    await _player.seek(Duration.zero, index: index);
   }
-
-  Stream<bool> get playingStream =>
-      _player.playerStateStream.map((s) => s.playing);
 
   Duration? get duration => _player.duration;
 
@@ -292,23 +286,6 @@ class AudioManager {
     _currentQueue.clear();
     _originalOrder.clear();
     _queueStreamController.add(List.unmodifiable(_currentQueue));
-  }
-
-  Future<void> seekFraction(double fraction) async {
-    final dur = _player.duration;
-    if (dur != null) {
-      final target =
-          Duration(milliseconds: (fraction * dur.inMilliseconds).round());
-      await _player.seek(target);
-    }
-  }
-
-  /// Jump to a specific index in the current queue.
-  Future<void> seekToIndex(int index) async {
-    if (_playlist == null ||
-        index < 0 ||
-        index >= _playlist!.length) return;
-    await _player.seek(Duration.zero, index: index);
   }
 
   Future<void> dispose() async {

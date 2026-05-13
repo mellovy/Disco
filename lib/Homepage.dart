@@ -342,11 +342,13 @@ class _HomePageState extends State<HomePage> {
                                                   ],
                                                 ),
                                               ),
-                                              _PixelSongMenu(
+                                              PixelSongMenu(
                                                 song: song,
                                                 hasOngoingQueue: hasOngoingQueue,
                                                 userId: widget.userId,
-                                                isDark: isDark,
+                                                accent: accent,
+                                                textPrimary: textPrimary,
+                                                cardColor: cardColor,
                                                 onAddToPlaylist: () =>
                                                     _showAddToPlaylist(
                                                         context, song),
@@ -437,11 +439,13 @@ class _HomePageState extends State<HomePage> {
                                       fontFamily: 'monospace',
                                     ),
                                   ),
-                                  trailing: _PixelSongMenu(
+                                  trailing: PixelSongMenu(
                                     song: song,
                                     hasOngoingQueue: hasOngoingQueue,
                                     userId: widget.userId,
-                                    isDark: isDark,
+                                    accent: accent,
+                                    textPrimary: textPrimary,
+                                    cardColor: cardColor,
                                     onAddToPlaylist: () =>
                                         _showAddToPlaylist(context, song),
                                   ),
@@ -464,120 +468,3 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// ── Pixel-style 3-dot song action menu ────────────────────────────────────
-class _PixelSongMenu extends StatefulWidget {
-  final Song song;
-  final bool hasOngoingQueue;
-  final int userId;
-  final bool isDark;
-  final VoidCallback onAddToPlaylist;
-
-  const _PixelSongMenu({
-    required this.song,
-    required this.hasOngoingQueue,
-    required this.userId,
-    required this.isDark,
-    required this.onAddToPlaylist,
-  });
-
-  @override
-  State<_PixelSongMenu> createState() => _PixelSongMenuState();
-}
-
-class _PixelSongMenuState extends State<_PixelSongMenu> {
-  bool _toggling = false;
-
-  Future<void> _toggleFavorite() async {
-    if (_toggling) return;
-    setState(() {
-      _toggling = true;
-      widget.song.isFavorite = !widget.song.isFavorite;
-    });
-    final success =
-        await DBService.toggleFavorite(widget.userId, widget.song.id);
-    if (!mounted) return;
-    if (!success) {
-      setState(() => widget.song.isFavorite = !widget.song.isFavorite);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update favorite')),
-      );
-    } else {
-      DBService.notifyPlaylistRefresh();
-    }
-    setState(() => _toggling = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = widget.isDark ? PixelColors.neonPink : PixelColors.accentPink;
-    return PopupMenuButton<String>(
-      icon: Icon(Icons.more_vert,
-          color: widget.isDark ? PixelColors.darkBorder : PixelColors.lightBorder,
-          size: 20),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-      color: widget.isDark ? PixelColors.darkCard : PixelColors.lightCard,
-      onSelected: (value) {
-        if (value == 'queue') {
-          AudioManager.instance.addToQueue(widget.song);
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('${widget.song.title} added to queue',
-                style: const TextStyle(fontFamily: 'monospace')),
-            duration: const Duration(seconds: 1),
-          ));
-        } else if (value == 'playlist') {
-          widget.onAddToPlaylist();
-        } else if (value == 'favorite') {
-          _toggleFavorite();
-        }
-      },
-      itemBuilder: (_) => [
-        if (widget.hasOngoingQueue)
-          PopupMenuItem(
-            value: 'queue',
-            child: Row(children: [
-              Icon(Icons.playlist_add, color: accent, size: 18),
-              const SizedBox(width: 10),
-              Text('ADD TO QUEUE',
-                  style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 11,
-                      letterSpacing: 1,
-                      color: widget.isDark ? Colors.white : PixelColors.darkBg)),
-            ]),
-          ),
-        PopupMenuItem(
-          value: 'favorite',
-          child: Row(children: [
-            Icon(
-              widget.song.isFavorite ? Icons.favorite : Icons.favorite_border,
-              color: widget.song.isFavorite ? Colors.red : accent,
-              size: 18,
-            ),
-            const SizedBox(width: 10),
-            Text(
-              widget.song.isFavorite ? 'REMOVE FROM FAVORITES' : 'ADD TO FAVORITES',
-              style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                  letterSpacing: 1,
-                  color: widget.isDark ? Colors.white : PixelColors.darkBg),
-            ),
-          ]),
-        ),
-        PopupMenuItem(
-          value: 'playlist',
-          child: Row(children: [
-            Icon(Icons.library_add, color: accent, size: 18),
-            const SizedBox(width: 10),
-            Text('ADD TO PLAYLIST',
-                style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 11,
-                    letterSpacing: 1,
-                    color: widget.isDark ? Colors.white : PixelColors.darkBg)),
-          ]),
-        ),
-      ],
-    );
-  }
-}

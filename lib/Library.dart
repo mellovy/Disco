@@ -30,11 +30,6 @@ class _LibraryPageState extends State<LibraryPage> {
     DBService.playlistRefreshStream.listen((_) => _onRefreshTriggered());
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
   void _onRefreshTriggered() {
     if (mounted) _loadPlaylists();
   }

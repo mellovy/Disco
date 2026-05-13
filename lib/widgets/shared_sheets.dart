@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../pixel_colors.dart';
 import '../models/song.dart';
 import '../services/db_service.dart';
+import '../services/audio_manager.dart';
 
 /// Shared pixel-style playlist bottom sheet used across the app.
 class PixelPlaylistSheet extends StatefulWidget {
@@ -265,6 +266,153 @@ class _PixelPlaylistSheetState extends State<PixelPlaylistSheet> {
   }
 }
 
+
+
+/// Shared pixel section label used across the app.
+class PixelSectionLabel extends StatelessWidget {
+  final String text;
+  final Color accent;
+  const PixelSectionLabel(this.text, {required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(width: 4, height: 18, color: accent),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+            color: accent,
+            letterSpacing: 2,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Shared pixel-style song popup menu used across the app.
+class PixelSongMenu extends StatefulWidget {
+  final Song song;
+  final bool hasOngoingQueue;
+  final int userId;
+  final Color accent;
+  final Color textPrimary;
+  final Color cardColor;
+  final VoidCallback onAddToPlaylist;
+
+  const PixelSongMenu({
+    required this.song,
+    required this.hasOngoingQueue,
+    required this.userId,
+    required this.accent,
+    required this.textPrimary,
+    required this.cardColor,
+    required this.onAddToPlaylist,
+  });
+
+  @override
+  State<PixelSongMenu> createState() => _PixelSongMenuState();
+}
+
+class _PixelSongMenuState extends State<PixelSongMenu> {
+  bool _toggling = false;
+
+  Future<void> _toggleFavorite() async {
+    if (_toggling) return;
+    setState(() {
+      _toggling = true;
+      widget.song.isFavorite = !widget.song.isFavorite;
+    });
+    final success = await DBService.toggleFavorite(widget.userId, widget.song.id);
+    if (!mounted) return;
+    if (!success) {
+      setState(() => widget.song.isFavorite = !widget.song.isFavorite);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to update favorite')),
+      );
+    } else {
+      DBService.notifyPlaylistRefresh();
+    }
+    setState(() => _toggling = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      icon: Icon(Icons.more_vert,
+          color: widget.accent.withOpacity(0.6), size: 20),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      color: widget.cardColor,
+      onSelected: (value) {
+        if (value == 'queue') {
+          AudioManager.instance.addToQueue(widget.song);
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('${widget.song.title} added to queue',
+                style: const TextStyle(fontFamily: 'monospace')),
+            duration: const Duration(seconds: 1),
+          ));
+        } else if (value == 'playlist') {
+          widget.onAddToPlaylist();
+        } else if (value == 'favorite') {
+          _toggleFavorite();
+        }
+      },
+      itemBuilder: (_) => [
+        if (widget.hasOngoingQueue)
+          PopupMenuItem(
+            value: 'queue',
+            child: Row(children: [
+              Icon(Icons.playlist_add, color: widget.accent, size: 18),
+              const SizedBox(width: 10),
+              Text('ADD TO QUEUE',
+                  style: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      letterSpacing: 1,
+                      color: widget.textPrimary)),
+            ]),
+          ),
+        PopupMenuItem(
+          value: 'favorite',
+          child: Row(children: [
+            Icon(
+              widget.song.isFavorite ? Icons.favorite : Icons.favorite_border,
+              color: widget.song.isFavorite ? Colors.red : widget.accent,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              widget.song.isFavorite ? 'REMOVE FROM FAVORITES' : 'ADD TO FAVORITES',
+              style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  letterSpacing: 1,
+                  color: widget.textPrimary),
+            ),
+          ]),
+        ),
+        PopupMenuItem(
+          value: 'playlist',
+          child: Row(children: [
+            Icon(Icons.library_add, color: widget.accent, size: 18),
+            const SizedBox(width: 10),
+            Text('ADD TO PLAYLIST',
+                style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    color: widget.textPrimary)),
+          ]),
+        ),
+      ],
+    );
+  }
+}
 /// Shared pixel-style song thumbnail placeholder.
 Widget pixelThumb(Color accent, {double size = 50}) {
   return Container(

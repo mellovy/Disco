@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'pixel_colors.dart';
 import 'services/db_service.dart';
+import 'widgets/shared_sheets.dart';
 
 class UploadSongPage extends StatefulWidget {
   const UploadSongPage({super.key});
@@ -217,7 +218,7 @@ class _UploadSongPageState extends State<UploadSongPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Section label — pixel style
-                  _PixelSectionLabel("SONG DETAILS", accent: accent),
+                  PixelSectionLabel("SONG DETAILS", accent: accent),
                   const SizedBox(height: 14),
 
                   _SoftPixelInput(
@@ -242,7 +243,7 @@ class _UploadSongPageState extends State<UploadSongPage> {
                   ),
                   const SizedBox(height: 26),
 
-                  _PixelSectionLabel("FILES", accent: accent),
+                  PixelSectionLabel("FILES", accent: accent),
                   const SizedBox(height: 14),
 
                   _SoftFilePicker(
@@ -339,32 +340,6 @@ class _UploadSongPageState extends State<UploadSongPage> {
 }
 
 // ── Shared pixel-style sub-widgets ─────────────────────────────────────────
-
-class _PixelSectionLabel extends StatelessWidget {
-  final String text;
-  final Color accent;
-  const _PixelSectionLabel(this.text, {required this.accent});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(width: 4, height: 18, color: accent),
-        const SizedBox(width: 8),
-        Text(
-          text,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
-            color: accent,
-            letterSpacing: 2,
-            fontFamily: 'monospace',
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _SoftPixelInput extends StatelessWidget {
   final TextEditingController controller;
