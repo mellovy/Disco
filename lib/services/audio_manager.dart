@@ -83,7 +83,12 @@ class AudioManager {
     try {
       await _player.setShuffleModeEnabled(false);
       await _player.setAudioSource(_playlist!, preload: true);
-      await _player.play();
+      try {
+        await _player.play();
+      } catch (e) {
+        // Suppress web AbortError when a new load interrupts play
+        if (!e.toString().contains('AbortError')) rethrow;
+      }
       _updateQueueFromPlayer();
     } on PlayerInterruptedException catch (e) {
       print("Interrupted setSong: $e");
@@ -112,7 +117,12 @@ class AudioManager {
       await _player.setAudioSource(_playlist!,
           initialIndex: clampedIndex, preload: true);
       _currentPlayingId = songs[clampedIndex].id;
-      await _player.play();
+      try {
+        await _player.play();
+      } catch (e) {
+        // Suppress web AbortError when a new load interrupts play
+        if (!e.toString().contains('AbortError')) rethrow;
+      }
       _updateQueueFromPlayer();
     } on PlayerInterruptedException catch (e) {
       print("Interrupted setQueue: $e");
